@@ -14,14 +14,13 @@
                                      \\    ,
                                       `---'  
 
-Newt is a Gaussian process library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)). Newt differs from existing GP libraries in that it takes a unifying view of approximate Bayesian inference as variants of Newton's algorithm. This means that Newt encourages use of (and development of) many inference methods, rather than just focusing on VI.
+Newt is a Gaussian process library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)).
 
 Newt currently provides the following models:
  - GPs
  - Sparse GPs
- - Markov GPs (including spatio-temporal GPs)
+ - Markov GPs
  - Sparse Markov GPs
- - Infinite-horzion GPs
 
 with the following inference methods:
  - Variational inference (with natural gradients)
