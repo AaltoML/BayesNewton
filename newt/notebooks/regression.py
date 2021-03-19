@@ -26,7 +26,7 @@ x_test = np.linspace(np.min(x)-15.0, np.max(x)+15.0, num=500)
 y_test = wiggly_time_series(x_test)
 x_plot = np.linspace(np.min(x)-20.0, np.max(x)+20.0, 200)
 M = 20
-batch_size = N  # TODO: why does using smaller batch_size result in longer compile time?
+batch_size = N
 z = np.linspace(-30, 155, num=M)
 # z = x
 # z = np.linspace(-10, 140, num=M)
@@ -44,18 +44,14 @@ kern = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = newt.likelihoods.Gaussian(variance=var_y)
 # model = newt.models.GP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = newt.models.SparseGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, opt_z=True)
-model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.InfiniteHorizonGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
-# model = newt.models.SparseInfiniteHorizonGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+# model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
+model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
-inf = newt.inference.VariationalInference()
+# inf = newt.inference.VariationalInference()
 # inf = newt.inference.Laplace()
 # inf = newt.inference.PosteriorLinearisation()
 # inf = newt.inference.Taylor()
-# inf = newt.inference.ExpectationPropagation(power=0.5)
-# inf = newt.inference.LaplaceQuasiNewton(num_data=N, dim=model.func_dim)
-# inf = newt.inference.VariationalQuasiNewton(num_data=N, dim=model.func_dim)
+inf = newt.inference.ExpectationPropagation(power=0.5)
 
 trainable_vars = model.vars() + inf.vars()
 energy = objax.GradValues(inf.energy, trainable_vars)

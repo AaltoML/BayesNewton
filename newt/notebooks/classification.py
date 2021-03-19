@@ -8,11 +8,8 @@ print('generating some data ...')
 np.random.seed(99)
 N = 500  # number of training points
 M = 20
-# x = 100 * np.random.rand(N)
-x0 = 40 * np.random.rand(N//2)
-x1 = 40 * np.random.rand(N//2) + 60
-x = np.concatenate([x0, np.array([50]), x1], axis=0)
-# x = np.linspace(np.min(x), np.max(x), N)
+x = 100 * np.random.rand(N)
+x = np.linspace(np.min(x), np.max(x), N)
 f = lambda x_: 6 * np.sin(np.pi * x_ / 10.0) / (np.pi * x_ / 10.0 + 1)
 y_ = f(x) + np.math.sqrt(0.05)*np.random.randn(x.shape[0])
 y = np.sign(y_)
@@ -32,15 +29,13 @@ len_f = 5.0  # GP lengthscale
 kern = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = newt.likelihoods.Bernoulli(link='logit')
 # model = newt.models.GP(kernel=kern, likelihood=lik, X=x, Y=y)
-model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.InfiniteHorizonGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.SparseInfiniteHorizonGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+# model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
+model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
 # inf = newt.inference.VariationalInference()
-# inf = newt.inference.ExpectationPropagation(power=0.5)
-inf = newt.inference.PosteriorLinearisation()
+inf = newt.inference.ExpectationPropagation(power=0.5)
+# inf = newt.inference.PosteriorLinearisation()
 # inf = newt.inference.Laplace()
-# inf = newt.inference.LaplaceQuasiNewton(num_data=N, dim=model.func_dim)
 
 trainable_vars = model.vars() + inf.vars()
 energy = objax.GradValues(inf.energy, trainable_vars)
