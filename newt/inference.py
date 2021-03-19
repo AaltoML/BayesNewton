@@ -238,7 +238,8 @@ class ExpectationPropagation(Inference):
             self.cubature
         )
 
-        scale_factor = vmap(inv)(cav_cov_f @ d2lZ + np.eye(d2lZ.shape[1])) / self.power
+        cav_prec = vmap(inv)(cav_cov_f)
+        scale_factor = cav_prec @ vmap(inv)(d2lZ + cav_prec) / self.power
         dlZ = scale_factor @ dlZ
         d2lZ = scale_factor @ d2lZ
         if model.mask is not None:
