@@ -61,7 +61,6 @@ class Inference(objax.Module):
         # -----------------------
         nat1, nat2 = model.group_natural_params(nat1_n, nat2_n, batch_ind)  # sequential / batch operation
 
-        # apply the parameter update and return the energy
         # ---- update the model parameters ----
         model.pseudo_likelihood_nat1.value = (
             (1 - lr) * model.pseudo_likelihood_nat1.value
