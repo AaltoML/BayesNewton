@@ -1,10 +1,10 @@
 import objax
 from jax import vmap
 import jax.numpy as np
-from jax.ops import index_add, index
 from jax.scipy.linalg import cholesky, cho_factor
 from .utils import solve, gaussian_first_derivative_wrt_mean, gaussian_second_derivative_wrt_mean
 from numpy.polynomial.hermite import hermgauss
+import numpy as onp
 import itertools
 
 
@@ -78,61 +78,106 @@ def symmetric_cubature_third_order(dim=1, kappa=None):
     if kappa is None:
         # kappa = 1 - dim
         kappa = 0  # CKF
+    w0 = kappa / (dim + kappa)
+    wm = 1 / (2 * (dim + kappa))
+    u = onp.sqrt(dim + kappa)
     if (dim == 1) and (kappa == 0):
-        weights = np.array([0., 0.5, 0.5])
-        sigma_pts = np.array([0., 1., -1.])
-        # sigma_pts = np.array([-1., 0., 1.])
-        # weights = np.array([0.5, 0., 0.5])
-        # u = 1
+        weights = onp.array([w0, wm, wm])
+        sigma_pts = onp.array([0., u, -u])
+        # sigma_pts = onp.array([-u, 0., u])
+        # weights = onp.array([wm, w0, wm])
     elif (dim == 2) and (kappa == 0):
-        weights = np.array([0., 0.25, 0.25, 0.25, 0.25])
-        sigma_pts = np.block([[0., 1.4142,  0., -1.4142, 0.],
-                              [0., 0., 1.4142, 0., -1.4142]])
-        # u = 1.4142
+        weights = onp.array([w0, wm, wm, wm, wm])
+        sigma_pts = onp.block([[0., u,  0., -u, 0.],
+                               [0., 0., u, 0., -u]])
     elif (dim == 3) and (kappa == 0):
-        weights = np.array([0., 0.1667, 0.1667, 0.1667, 0.1667, 0.1667, 0.1667])
-        sigma_pts = np.block([[0., 1.7321, 0.,  0., -1.7321, 0., 0.],
-                              [0., 0., 1.7321, 0., 0., -1.7321, 0.],
-                              [0., 0., 0., 1.7321, 0., 0., -1.7321]])
-        # u = 1.7321
+        weights = onp.array([w0, wm, wm, wm, wm, wm, wm])
+        sigma_pts = onp.block([[0., u,  0., 0., -u,   0.,  0.],
+                               [0., 0., u,  0.,  0., -u,   0.],
+                               [0., 0., 0., u,   0.,  0., -u]])
     else:
-        # weights
-        weights = np.zeros([1, 2 * dim + 1])
-        weights = index_add(weights, index[0, 0], kappa / (dim + kappa))
-        for j in range(1, 2 * dim + 1):
-            wm = 1 / (2 * (dim + kappa))
-            weights = index_add(weights, index[0, j], wm)
-        # Sigma points
-        sigma_pts = np.block([np.zeros([dim, 1]), np.eye(dim), - np.eye(dim)])
-        sigma_pts = np.sqrt(dim + kappa) * sigma_pts
-        # u = np.sqrt(n + kappa)
-    return sigma_pts, weights  # , u
+        weights = onp.concatenate([onp.array([[kappa / (dim + kappa)]]), wm * onp.ones([1, 2*dim])], axis=1)
+        sigma_pts = onp.sqrt(dim + kappa) * onp.block([onp.zeros([dim, 1]), onp.eye(dim), -onp.eye(dim)])
+    return sigma_pts, weights
 
 
 def symmetric_cubature_fifth_order(dim=1):
     """
     Return weights and sigma-points for the symmetric cubature rule of order 5
-    TODO: implement general form
     """
+    # The weights and sigma-points from McNamee & Stenger
+    I0 = 1
+    I2 = 1
+    I4 = 3
+    I22 = 1
+    u = onp.sqrt(I4 / I2)
+    A0 = I0 - dim * (I2 / I4) ** 2 * (I4 - 0.5 * (dim - 1) * I22)
+    A1 = 0.5 * (I2 / I4) ** 2 * (I4 - (dim - 1) * I22)
+    A2 = 0.25 * (I2 / I4) ** 2 * I22
+    # we implement specific cases manually to save compute
     if dim == 1:
-        weights = np.array([0.6667, 0.1667, 0.1667])
-        sigma_pts = np.array([0., 1.7321, -1.7321])
+        weights = onp.array([A0, A1, A1])
+        sigma_pts = onp.array([0., u, -u])
     elif dim == 2:
-        weights = np.array([0.4444, 0.1111, 0.1111, 0.1111, 0.1111, 0.0278, 0.0278, 0.0278, 0.0278])
-        sigma_pts = np.block([[0., 1.7321, -1.7321, 0., 0., 1.7321, -1.7321, 1.7321, -1.7321],
-                              [0., 0., 0., 1.7321, -1.7321, 1.7321, -1.7321, -1.7321, 1.7321]])
+        weights = onp.array([A0, A1, A1, A1, A1, A2, A2, A2, A2])
+        sigma_pts = onp.block([[0., u, -u, 0., 0., u, -u, u, -u],
+                               [0., 0., 0., u, -u, u, -u, -u, u]])
     elif dim == 3:
-        weights = np.array([0.3333, 0.0556, 0.0556, 0.0556, 0.0556, 0.0556, 0.0556, 0.0278, 0.0278, 0.0278,
-                            0.0278, 0.0278, 0.0278, 0.0278, 0.0278, 0.0278, 0.0278, 0.0278, 0.0278])
-        sigma_pts = np.block([[0., 1.7321, -1.7321, 0., 0., 0., 0., 1.7321, -1.7321, 1.7321, -1.7321, 1.7321,
-                               -1.7321, 1.7321, -1.7321, 0., 0., 0., 0.],
-                              [0., 0., 0., 1.7321, -1.7321, 0., 0., 1.7321, -1.7321, -1.7321, 1.7321, 0., 0., 0.,
-                               0., 1.7321, -1.7321, 1.7321, -1.7321],
-                              [0., 0., 0., 0., 0., 1.7321, -1.7321, 0., 0., 0., 0., 1.7321, -1.7321, -1.7321,
-                               1.7321, 1.7321, -1.7321, -1.7321, 1.7321]])
+        weights = onp.array([A0, A1, A1, A1, A1, A1, A1, A2, A2, A2, A2, A2, A2, A2, A2, A2, A2, A2, A2])
+        sigma_pts = onp.block([[0., u, -u, 0., 0., 0., 0., u, -u, u, -u, u, -u, u, -u, 0., 0., 0., 0.],
+                               [0., 0., 0., u, -u, 0., 0., u, -u, -u, u, 0., 0., 0., 0., u, -u, u, -u],
+                               [0., 0., 0., 0., 0., u, -u, 0., 0., 0., 0., u, -u, -u, u, u, -u, -u, u]])
     else:
-        raise NotImplementedError
+        # general case
+        U0 = sym_set(dim, [])
+        U1 = sym_set(dim, [u])
+        U2 = sym_set(dim, [u, u])
+
+        sigma_pts = onp.concatenate([U0, U1, U2], axis=1)
+        weights = onp.concatenate([A0 * onp.ones(U0.shape[1]),
+                                   A1 * onp.ones(U1.shape[1]),
+                                   A2 * onp.ones(U2.shape[1])])
+
     return sigma_pts, weights
+
+
+def sym_set(n, gen=None):
+
+    if (gen is None) or (len(gen) == 0):
+        U = onp.zeros([n, 1])
+
+    else:
+        lengen = len(gen)
+        if lengen == 1:
+            U = onp.zeros([n, 2 * n])
+        elif lengen == 2:
+            U = onp.zeros([n, 2 * n * (n - 1)])
+        else:
+            raise NotImplementedError
+
+        ind = 0
+        for i in range(n):
+            u = onp.zeros(n)
+            u[i] = gen[0]
+            if lengen > 1:
+                if abs(gen[0] - gen[1]) < 1e-10:
+                    V = sym_set(n-i-1, gen[1:])
+                    for j in range(V.shape[1]):
+                        u[i+1:] = V[:, j]
+                        U[:, 2*ind] = u
+                        U[:, 2*ind + 1] = -u
+                        ind += 1
+                else:
+                    raise NotImplementedError
+                    # V = sym_set(n-1, gen[1:])
+                    # for j in range(V.shape[1]):
+                    #     u[:i-1, i+1:] = V[:, j]
+                    #     U = onp.concatenate([U, u, -u])
+                    #     ind += 1
+            else:
+                U[:, 2*i] = u
+                U[:, 2*i+1] = -u
+    return U
 
 
 def variational_expectation_cubature(likelihood, y, post_mean, post_cov, cubature=None):
