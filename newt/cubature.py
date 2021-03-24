@@ -72,8 +72,8 @@ def gauss_hermite(dim=1, num_quad_pts=20):
 
 def symmetric_cubature_third_order(dim=1, kappa=None):
     """
-    Return weights and sigma-points for the symmetric cubature rule of order 5, for
-    dimension dim with parameter kappa (default 0).
+    Return weights and sigma-points for the symmetric cubature rule of order 3.
+    Uses 2dim+1 sigma-points
     """
     if kappa is None:
         # kappa = 1 - dim
@@ -103,7 +103,8 @@ def symmetric_cubature_third_order(dim=1, kappa=None):
 
 def symmetric_cubature_fifth_order(dim=1):
     """
-    Return weights and sigma-points for the symmetric cubature rule of order 5
+    Return weights and sigma-points for the symmetric cubature rule of order 5.
+    Uses 2(dim**2)+1 sigma-points
     """
     # The weights and sigma-points from McNamee & Stenger
     I0 = 1
