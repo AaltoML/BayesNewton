@@ -12,7 +12,6 @@ def wiggly_time_series(x_):
             0.0 * x_)  # 0.02 * x_)
 
 
-print('generating some data ...')
 np.random.seed(12345)
 N = 100
 # x0 = np.random.permutation(np.linspace(-25.0, 30.0, num=N//2) + 1*np.random.randn(N//2))  # unevenly spaced
@@ -29,7 +28,6 @@ M = 20
 batch_size = N
 z = np.linspace(-30, 155, num=M)
 # z = x
-# z = np.linspace(-10, 140, num=M)
 
 
 z = z[:, None]
@@ -47,11 +45,11 @@ lik = newt.likelihoods.Gaussian(variance=var_y)
 # model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
 model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
-# inf = newt.inference.VariationalInference()
+inf = newt.inference.VariationalInference()
 # inf = newt.inference.Laplace()
 # inf = newt.inference.PosteriorLinearisation()
 # inf = newt.inference.Taylor()
-inf = newt.inference.ExpectationPropagation(power=0.5)
+# inf = newt.inference.ExpectationPropagation(power=0.5)
 
 trainable_vars = model.vars() + inf.vars()
 energy = objax.GradValues(inf.energy, trainable_vars)

@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-print('generating some data ...')
 np.random.seed(99)
 N = 500  # number of training points
 M = 20

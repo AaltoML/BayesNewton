@@ -97,20 +97,6 @@ def process_noise_covariance(A, Pinf):
 
 
 def _sequential_kf(As, Qs, H, ys, noise_covs, m0, P0, masks, return_predict=False):
-    n_obs = ys.shape[0]
-
-    def repeat_elems(matrices):
-        if np.ndim(matrices) == 3:
-            if matrices.shape[0] == n_obs:
-                return matrices
-            else:
-                return np.repeat(matrices, n_obs, axis=0)
-        elif np.ndim(matrices) == 2:
-            return np.repeat(np.expand_dims(matrices, 0), n_obs, axis=0)
-        else:
-            raise ValueError(f"Expected ndim of {matrices} is 2 or 3, f{np.ndim(matrices)} was passed")
-
-    As, Qs, noise_covs = list(map(repeat_elems, (As, Qs, noise_covs)))
 
     def body(carry, inputs):
         y, A, Q, obs_cov, mask = inputs
@@ -172,20 +158,6 @@ def kalman_filter(dt, kernel, y, noise_cov, mask=None, use_sequential=True, retu
 
 
 def _sequential_rts(fms, fPs, As, Qs, H, return_full):
-    n_obs = fms.shape[0]
-
-    def repeat_elems(matrices):
-        if np.ndim(matrices) == 3:
-            if matrices.shape[0] == n_obs:
-                return matrices
-            else:
-                return np.repeat(matrices, n_obs, axis=0)
-        elif np.ndim(matrices) == 2:
-            return np.repeat(np.expand_dims(matrices, 0), n_obs, axis=0)
-        else:
-            raise ValueError(f"Expected ndim of {matrices} is 2 or 3, f{np.ndim(matrices)} was passed")
-
-    As, Qs = list(map(repeat_elems, (As, Qs)))
 
     def body(carry, inputs):
         fm, fP, A, Q = inputs
@@ -237,65 +209,6 @@ def rauch_tung_striebel_smoother(dt, kernel, filter_mean, filter_cov, return_ful
     return means, covs, gains
 
 
-def _sequential_kf_pairs(As, Qs, ys, noise_covs, m0, P0):
-    n_obs = ys.shape[0]
-
-    def repeat_elems(matrices):
-        if np.ndim(matrices) == 3:
-            if matrices.shape[0] == n_obs:
-                return matrices
-            else:
-                return np.repeat(matrices, n_obs, axis=0)
-        elif np.ndim(matrices) == 2:
-            return np.repeat(np.expand_dims(matrices, 0), n_obs, axis=0)
-        else:
-            raise ValueError(f"Expected ndim of {matrices} is 2 or 3, f{np.ndim(matrices)} was passed")
-
-    As, Qs, noise_covs = list(map(repeat_elems, (As, Qs, noise_covs)))
-
-    state_dim = As[0].shape[0]
-
-    def body(carry, inputs):
-        y, A, Q, obs_cov = inputs
-        m_left, P_left, ell = carry
-
-        # predict
-        m_right = A @ m_left
-        P_right = A @ P_left @ A.T + Q
-
-        # construct the joint distribution p(uₙ₋₁,uₙ) = p(uₙ₋₁)p(uₙ|uₙ₋₁)
-        PA_ = P_left @ A.T
-        m_joint = np.block([[m_left],
-                            [m_right]])
-        P_joint = np.block([[P_left, PA_],
-                            [PA_.T,  P_right]])
-
-        S = P_joint + obs_cov
-
-        ell_n = mvn_logpdf(y, m_joint, S)
-        ell = ell + ell_n
-
-        K = solve(S, P_joint).T
-
-        # perform update
-        m = m_joint + K @ (y - m_joint)
-        P = P_joint - P_joint @ K.T
-
-        # marginalise and store the now fully updated left state, uₙ₋₁
-        m_left = m[:state_dim]
-        P_left = P[:state_dim, :state_dim]
-        # marginalise and propagate the right state, uₙ
-        m_right = m[state_dim:]
-        P_right = P[state_dim:, state_dim:]
-
-        return (m_right, P_right, ell), (m_left, P_left)
-
-    (_, _, loglik), (fms, fPs) = scan(f=body,
-                                      init=(m0, P0, 0.),
-                                      xs=(ys, As, Qs, noise_covs))
-    return loglik, fms[1:], fPs[1:]  # discard intial dummy state
-
-
 def kalman_filter_pairs(dt, kernel, y, noise_cov, use_sequential=True):
     """
     A Kalman filter over pairs of states, in which y is [2state_dim, 1] and noise_cov is [2state_dim, 2state_dim]
@@ -309,15 +222,31 @@ def kalman_filter_pairs(dt, kernel, y, noise_cov, use_sequential=True):
         means: marginal state filtering means [N, state_dim, 1]
         covs: marginal state filtering covariances [N, state_dim, state_dim]
     """
-
     Pinf = kernel.stationary_covariance()
-    minf = np.zeros([Pinf.shape[0], 1])
+    state_dim = Pinf.shape[0]
+    minf = np.zeros([state_dim, 1])
+    zeros = np.zeros([state_dim, state_dim])
+    Pinfpair = np.block([[Pinf,  zeros],
+                         [zeros, Pinf]])
+    minfpair = np.block([[minf],
+                         [minf]])
 
     As = vmap(kernel.state_transition)(dt)
     Qs = vmap(process_noise_covariance, [0, None])(As, Pinf)
 
+    def construct_pair(A, Q):
+        Apair = np.block([[zeros, np.eye(state_dim)],
+                          [zeros, A]])
+        Qpair = np.block([[zeros, zeros],
+                          [zeros, Q]])
+        return Apair, Qpair
+
+    Apairs, Qpairs = vmap(construct_pair)(As, Qs)
+    H = np.eye(2 * state_dim)
+    masks = np.zeros_like(y, dtype=bool)
+
     if use_sequential:
-        ell, means, covs = _sequential_kf_pairs(As, Qs, y, noise_cov, minf, Pinf)
+        ell, means, covs = _sequential_kf(Apairs, Qpairs, H, y, noise_cov, minfpair, Pinfpair, masks)
     else:
         raise NotImplementedError("Parallel KF not implemented yet")
-    return ell, (means, covs)
+    return ell, (means[1:, :state_dim], covs[1:, :state_dim, :state_dim])
