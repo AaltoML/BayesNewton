@@ -7,7 +7,6 @@ from .utils import (
     transpose,
     inv,
     solve,
-    ensure_positive_precision,
     ensure_diagonal_positive_precision,
     mvn_logpdf,
     pep_constant
@@ -102,7 +101,7 @@ class Laplace(Inference):
             mean_f
         )
 
-        hessian = -ensure_positive_precision(-hessian)  # manual fix to avoid non-PSD precision
+        hessian = -ensure_diagonal_positive_precision(-hessian)  # manual fix to avoid non-PSD precision
 
         jacobian, hessian = model.conditional_data_to_posterior(jacobian[..., None], hessian)
 
