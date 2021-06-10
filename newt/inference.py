@@ -1,24 +1,29 @@
 import objax
 import jax.numpy as np
 from jax import vmap
-from .cubature import GaussHermite
+from jax.ops import index_update, index
 from .utils import (
     diag,
     transpose,
-    inv,
+    inv_vmap,
     solve,
     ensure_diagonal_positive_precision,
     mvn_logpdf,
     pep_constant
 )
+from .likelihoods import Likelihood
+from .models import SparseGP
+from .basemodels import GaussianDistribution
 import math
+import abc
 
 LOG2PI = math.log(2 * math.pi)
 
 
 def newton_update(mean, jacobian, hessian):
     """
-    Applies one step of Newton's method to update the pseudo_likelihood parameters
+    Applies one step of Newton's method to update the pseudo_likelihood parameters.
+    Note that this is the natural parameter form of a Newton step.
     """
 
     # deal with missing data
@@ -36,99 +41,112 @@ def newton_update(mean, jacobian, hessian):
     return pseudo_likelihood_nat1, pseudo_likelihood_nat2
 
 
-class Inference(objax.Module):
+@vmap
+def mvn_logpdf_(*args, **kwargs):
+    return mvn_logpdf(*args, **kwargs)
+
+
+class InferenceMixin(abc.ABC):
     """
-    The approximate inference class.
-    Each approximate inference scheme implements an 'update' method which is called during
+    The approximate inference class. To be used as a Mixin, to add inference functionality to the model class.
+    Each approximate inference scheme implements an 'update_()' method which is called during
     inference in order to update the local likelihood approximation (the sites).
+    TODO: improve code sharing between classes
+    TODO: re-derive and re-implement QuasiNewton methods
+    TODO: move as much of the generic functionality as possible from the base model class to this class.
     """
-    def __init__(self,
-                 cubature=GaussHermite()):
-        self.cubature = cubature
+    num_data: float
+    Y: np.DeviceArray
+    ind: np.DeviceArray
+    pseudo_likelihood: GaussianDistribution
+    posterior_mean: objax.StateVar
+    posterior_var: objax.StateVar
+    update_posterior: classmethod
+    group_natural_params: classmethod
+    set_pseudo_likelihood: classmethod
+    conditional_posterior_to_data: classmethod
+    conditional_data_to_posterior: classmethod
+    likelihood: Likelihood
 
-    def __call__(self, model, lr=1., batch_ind=None):
+    def inference(self, lr=1., batch_ind=None, **kwargs):
 
-        if (batch_ind is None) or (batch_ind.shape[0] == model.num_data):
+        if (batch_ind is None) or (batch_ind.shape[0] == self.num_data):
             batch_ind = None
 
-        model.update_posterior()  # make sure the posterior is up to date
+        self.update_posterior()  # make sure the posterior is up to date
 
         # use the chosen inference method (VI, EP, ...) to compute the necessary terms for the parameter update
-        mean, jacobian, hessian = self.update(model, batch_ind, lr)
+        mean, jacobian, hessian = self.update_variational_params(batch_ind, lr, **kwargs)
         # ---- Newton update ----
-        nat1_n, nat2_n = newton_update(mean, jacobian, hessian)  # parallel operation
+        nat1_n, nat2_n = newton_update(mean, jacobian, hessian)
         # -----------------------
-        nat1, nat2 = model.group_natural_params(nat1_n, nat2_n, batch_ind)  # sequential / batch operation
+        nat1, nat2 = self.group_natural_params(nat1_n, nat2_n, batch_ind)  # only required for SparseMarkov models
 
-        # ---- update the model parameters ----
-        model.pseudo_likelihood_nat1.value = (
-            (1 - lr) * model.pseudo_likelihood_nat1.value
-            + lr * nat1
+        # ---- update the model variational parameters ----
+        self.pseudo_likelihood.update_nat_params(
+            nat1=(1 - lr) * self.pseudo_likelihood.nat1 + lr * nat1,
+            nat2=(1 - lr) * self.pseudo_likelihood.nat2 + lr * nat2
         )
-        model.pseudo_likelihood_nat2.value = (
-            (1 - lr) * model.pseudo_likelihood_nat2.value
-            + lr * nat2
-        )
-        model.set_pseudo_likelihood()  # update mean and covariance
 
-        model.update_posterior()  # recompute posterior with new params
+        self.update_posterior()  # recompute posterior with new params
 
-    def update(self, model, batch_ind=None, lr=1.):
+        return mean, jacobian, hessian  # output state to be used in linesearch methods
+
+    def update_variational_params(self, batch_ind=None, lr=1., **kwargs):
         raise NotImplementedError
 
-    def energy(self, model, batch_ind=None):
-        return model.filter_energy()
+    def energy(self, batch_ind=None, **kwargs):
+        raise NotImplementedError
 
 
-class Laplace(Inference):
+class Laplace(InferenceMixin):
     """
     """
-    def __init__(self):
-        super().__init__()
-        self.name = 'Laplace / Newton\'s Algorithm (NA)'
+    compute_kl: classmethod
 
-    def update(self, model, batch_ind=None, lr=1.):
+    def update_variational_params(self, batch_ind=None, lr=1., **kwargs):
         """
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
 
-        mean_f, _ = model.conditional_posterior_to_data(batch_ind)
+        mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, hessian = vmap(model.likelihood.log_likelihood_gradients)(  # parallel
-            model.Y[batch_ind],
+        log_lik, jacobian, hessian = vmap(self.likelihood.log_likelihood_gradients)(  # parallel
+            self.Y[batch_ind],
             mean_f
         )
 
         hessian = -ensure_diagonal_positive_precision(-hessian)  # manual fix to avoid non-PSD precision
 
-        jacobian, hessian = model.conditional_data_to_posterior(jacobian[..., None], hessian)
+        jacobian, hessian = self.conditional_data_to_posterior(jacobian[..., None], hessian)
 
         if mean_f.shape[1] == jacobian.shape[1]:
             return mean_f, jacobian, hessian
         else:
-            ind = model.ind[batch_ind]
-            return model.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
+            ind = self.ind[batch_ind]
+            return self.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
 
-    def energy(self, model, batch_ind=None):
+    def energy(self, batch_ind=None, **kwargs):
         """
+        TODO: implement correct Laplace energy
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
             scale = 1
         else:
-            scale = model.num_data / batch_ind.shape[0]
+            scale = self.num_data / batch_ind.shape[0]
 
-        mean_f, _ = model.conditional_posterior_to_data(batch_ind)
+        mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, _, _ = vmap(model.likelihood.log_likelihood_gradients)(  # parallel
-            model.Y[batch_ind],
+        log_lik, _, _ = vmap(self.likelihood.log_likelihood_gradients)(  # parallel
+            self.Y[batch_ind],
             mean_f
         )
 
-        KL = model.compute_kl()  # KL[q(f)|p(f)]
+        KL = self.compute_kl()  # KL[q(f)|p(f)]
         laplace_energy = -(  # Laplace approximation to the negative log marginal likelihood
             scale * np.nansum(log_lik)  # nansum accounts for missing data
             - KL
@@ -137,7 +155,7 @@ class Laplace(Inference):
         return laplace_energy
 
 
-class VariationalInference(Inference):
+class VariationalInference(InferenceMixin):
     """
     Natural gradient VI (using the conjugate-computation VI approach)
     Refs:
@@ -145,57 +163,54 @@ class VariationalInference(Inference):
                          in non-conjugate models in to inference in conjugate models"
         Chang, Wilkinson, Khan & Solin 2020 "Fast variational learning in state space Gaussian process models"
     """
-    def __init__(self,
-                 cubature=GaussHermite()):
-        super().__init__(cubature=cubature)
-        self.name = 'Variational Inference (VI)'
+    compute_kl: classmethod
 
-    def update(self, model, batch_ind=None, lr=1.):
+    def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
 
-        mean_f, cov_f = model.conditional_posterior_to_data(batch_ind)
+        mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # VI expected density is E_q[log p(y|f)]
-        expected_density, dE_dm, d2E_dm2 = vmap(model.likelihood.variational_expectation, (0, 0, 0, None))(
-            model.Y[batch_ind],
+        expected_density, dE_dm, d2E_dm2 = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+            self.Y[batch_ind],
             mean_f,
             cov_f,
-            self.cubature
+            cubature
         )
 
         d2E_dm2 = -ensure_diagonal_positive_precision(-d2E_dm2)  # manual fix to avoid non-PSD precision
 
-        jacobian, hessian = model.conditional_data_to_posterior(dE_dm, d2E_dm2)
+        jacobian, hessian = self.conditional_data_to_posterior(dE_dm, d2E_dm2)
 
         if mean_f.shape[1] == jacobian.shape[1]:
             return mean_f, jacobian, hessian
         else:
-            ind = model.ind[batch_ind]
-            return model.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
+            ind = self.ind[batch_ind]
+            return self.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
 
-    def energy(self, model, batch_ind=None):
+    def energy(self, batch_ind=None, cubature=None, **kwargs):
         """
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
             scale = 1
         else:
-            scale = model.num_data / batch_ind.shape[0]
+            scale = self.num_data / batch_ind.shape[0]
 
-        mean_f, cov_f = model.conditional_posterior_to_data(batch_ind)
+        mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # VI expected density is E_q[log p(y|f)]
-        expected_density, _, _ = vmap(model.likelihood.variational_expectation, (0, 0, 0, None))(
-            model.Y[batch_ind],
+        expected_density, _, _ = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+            self.Y[batch_ind],
             mean_f,
             cov_f,
-            self.cubature
+            cubature
         )
 
-        KL = model.compute_kl()  # KL[q(f)|p(f)]
+        KL = self.compute_kl()  # KL[q(f)|p(f)]
         variational_free_energy = -(  # the variational free energy, i.e., the negative ELBO
             scale * np.nansum(expected_density)  # nansum accounts for missing data
             - KL
@@ -204,146 +219,141 @@ class VariationalInference(Inference):
         return variational_free_energy
 
 
-class ExpectationPropagation(Inference):
+class ExpectationPropagation(InferenceMixin):
     """
     Expectation propagation (EP)
     """
-    def __init__(self,
-                 power=1.0,
-                 cubature=GaussHermite()):
-        self.power = power
-        super().__init__(cubature=cubature)
-        self.name = 'Expectation Propagation (EP)'
+    cavity_distribution: classmethod
+    compute_full_pseudo_lik: classmethod
+    mask_y: np.DeviceArray
+    mask_pseudo_y: np.DeviceArray
 
-    def update(self, model, batch_ind=None, lr=1.):
+    def update_variational_params(self, batch_ind=None, lr=1., cubature=None, power=1.):
         """
-        TODO: will not currently work with SparseGP because cavity_cov is a vector (SparseGP and SparseMarkovGP use different parameterisations)
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
 
         # compute the cavity distribution
-        cavity_mean, cavity_cov = model.cavity_distribution(batch_ind, self.power)
-        cav_mean_f, cav_cov_f = model.conditional_posterior_to_data(batch_ind, cavity_mean, cavity_cov)
+        cavity_mean, cavity_cov = self.cavity_distribution(batch_ind, power)
+        cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(batch_ind, cavity_mean, cavity_cov)
 
         # calculate log marginal likelihood and the new sites via moment matching:
         # EP expected density is log E_q[p(y|f)]
-        lZ, dlZ, d2lZ = vmap(model.likelihood.moment_match, (0, 0, 0, None, None))(
-            model.Y[batch_ind],
+        lZ, dlZ, d2lZ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+            self.Y[batch_ind],
             cav_mean_f,
             cav_cov_f,
-            self.power,
-            self.cubature
+            power,
+            cubature
         )
 
-        cav_prec = vmap(inv)(cav_cov_f)
-        scale_factor = cav_prec @ vmap(inv)(d2lZ + cav_prec) / self.power
+        cav_prec = inv_vmap(cav_cov_f)
+        scale_factor = cav_prec @ inv_vmap(d2lZ + cav_prec) / power  # this form guarantees symmetry
+
         dlZ = scale_factor @ dlZ
         d2lZ = scale_factor @ d2lZ
-        if model.mask is not None:
+        if self.mask_pseudo_y is not None:
             # apply mask
-            mask = model.mask[batch_ind][..., None]
+            mask = self.mask_pseudo_y[batch_ind][..., None]
             dlZ = np.where(mask, np.nan, dlZ)
             d2lZ_masked = np.where(mask + transpose(mask), 0., d2lZ)  # ensure masked entries are independent
             d2lZ = np.where(diag(mask)[..., None], np.nan, d2lZ_masked)  # ensure masked entries return log like of 0
 
         d2lZ = -ensure_diagonal_positive_precision(-d2lZ)  # manual fix to avoid non-PSD precision
 
-        jacobian, hessian = model.conditional_data_to_posterior(dlZ, d2lZ)
+        jacobian, hessian = self.conditional_data_to_posterior(dlZ, d2lZ)
 
         if cav_mean_f.shape[1] == jacobian.shape[1]:
             return cav_mean_f, jacobian, hessian
         else:
-            ind = model.ind[batch_ind]
+            ind = self.ind[batch_ind]
             return cavity_mean[ind], jacobian, hessian  # sparse Markov case
 
-    def energy(self, model, batch_ind=None):
+    def energy(self, batch_ind=None, cubature=None, power=1.):
         """
-        TODO: implement for SparseGP
+        TODO: the energy is incorrect for SparseGP
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
             scale = 1
         else:
-            scale = model.num_data / batch_ind.shape[0]
+            scale = self.num_data / batch_ind.shape[0]
 
         # compute the cavity distribution
-        cavity_mean, cavity_cov = model.cavity_distribution(None, self.power)
-        cav_mean_f, cav_cov_f = model.conditional_posterior_to_data(None, cavity_mean, cavity_cov)
+        cavity_mean, cavity_cov = self.cavity_distribution(None, power)  # TODO: check batch_ind is not required
+        cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(None, cavity_mean, cavity_cov)
 
         # calculate log marginal likelihood and the new sites via moment matching:
         # EP expected density is log E_q[p(y|f)]
-        lZ, _, _ = vmap(model.likelihood.moment_match, (0, 0, 0, None, None))(
-            model.Y[batch_ind],
+        lZ, _, _ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+            self.Y[batch_ind],
             cav_mean_f[batch_ind],
             cav_cov_f[batch_ind],
-            self.power,
-            self.cubature
+            power,
+            cubature
         )
 
-        mask = model.mask  # [batch_ind]
-        if model.mask is not None:
-            if np.squeeze(mask[batch_ind]).ndim != np.squeeze(lZ).ndim:
+        if self.mask_y is not None:
+            if np.squeeze(self.mask_y[batch_ind]).ndim != np.squeeze(lZ).ndim:
                 raise NotImplementedError('masking in spatio-temporal models not implemented for EP')
-            lZ = np.where(np.squeeze(mask[batch_ind]), 0., np.squeeze(lZ))  # apply mask
-            if mask.shape[1] != cavity_cov.shape[1]:
-                mask = np.tile(mask, [1, cavity_cov.shape[1]])
+            lZ = np.where(np.squeeze(self.mask_y[batch_ind]), 0., np.squeeze(lZ))  # apply mask
 
-        pseudo_y, pseudo_var = model.compute_full_pseudo_lik()
-        lZ_pseudo = vmap(mvn_logpdf)(
+        pseudo_y, pseudo_var = self.compute_full_pseudo_lik()
+        lZ_pseudo = mvn_logpdf_(
             pseudo_y,
             cavity_mean,
-            pseudo_var / self.power + cavity_cov,
-            mask
+            pseudo_var / power + cavity_cov,
+            self.mask_pseudo_y
         )
-        constant = vmap(pep_constant, [0, None, 0])(pseudo_var, self.power, mask)  # PEP constant
+        constant = vmap(pep_constant, [0, None, 0])(pseudo_var, power, self.mask_pseudo_y)  # PEP constant
         lZ_pseudo += constant
 
-        lZ_post = model.compute_log_lik(pseudo_y, pseudo_var)
+        if isinstance(self, SparseGP):
+            pseudo_y, pseudo_var = self.compute_global_pseudo_lik()
+            # TODO: check derivation for SparseGP. May take different form
+            # lZ_post = np.sum(vmap(self.compute_log_lik)(pseudo_y, pseudo_var))
+        # else:
+        lZ_post = self.compute_log_lik(pseudo_y, pseudo_var)
 
         ep_energy = -(
             lZ_post
-            + 1 / self.power * (scale * np.nansum(lZ) - np.nansum(lZ_pseudo))
+            + 1 / power * (scale * np.nansum(lZ) - np.nansum(lZ_pseudo))
         )
 
         return ep_energy
 
 
-class PosteriorLinearisation(Inference):
+class PosteriorLinearisation(InferenceMixin):
     """
     An iterated smoothing algorithm based on statistical linear regression (SLR).
     This method linearises the likelihood model in the region described by the posterior.
     """
-    def __init__(self,
-                 cubature=GaussHermite(),
-                 energy_function=None):
-        super().__init__(cubature=cubature)
-        if energy_function is None:
-            self.energy_function = ExpectationPropagation(power=1, cubature=cubature).energy
-            # self.energy_function = VariationalInference(cubature=cubature).energy
-        else:
-            self.energy_function = energy_function
-        self.name = 'Posterior Linearisation (PL)'
+    # TODO: remove these when possible
+    cavity_distribution: classmethod
+    compute_full_pseudo_lik: classmethod
+    mask_y: np.DeviceArray
+    mask_pseudo_y: np.DeviceArray
 
-    def update(self, model, batch_ind=None, lr=1.):
+    def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
+            batch_ind = np.arange(self.num_data)
 
-        mean_f, cov_f = model.conditional_posterior_to_data(batch_ind)
+        mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # PL expected density is mu=E_q[E(y|f)]
-        mu, d_mu, omega = vmap(model.likelihood.statistical_linear_regression, (0, 0, None))(
+        mu, omega, d_mu, _ = vmap(self.likelihood.statistical_linear_regression, (0, 0, None))(
             mean_f,
             cov_f,
-            self.cubature
+            cubature
         )
-        residual = model.Y[batch_ind].reshape(mu.shape) - mu
+        residual = self.Y[batch_ind].reshape(mu.shape) - mu
         mask = np.isnan(residual)
         residual = np.where(mask, 0., residual)
 
-        dmu_omega = transpose(vmap(solve)(omega, d_mu))  # d_mu^T @ inv(omega)
+        dmu_omega = transpose(solve(omega, d_mu))  # d_mu^T inv(omega)
         jacobian = dmu_omega @ residual
         hessian = -dmu_omega @ d_mu
 
@@ -351,17 +361,17 @@ class PosteriorLinearisation(Inference):
 
         # deal with missing data
         jacobian = np.where(mask, np.nan, jacobian)
-        hessian = np.where(diag(np.squeeze(mask, axis=-1)), np.nan, hessian)
+        hessian = np.where(mask * np.eye(mask.shape[1]), np.nan, hessian)
 
-        jacobian, hessian = model.conditional_data_to_posterior(jacobian, hessian)
+        jacobian, hessian = self.conditional_data_to_posterior(jacobian, hessian)
 
         if mean_f.shape[1] == jacobian.shape[1]:
             return mean_f, jacobian, hessian
         else:
-            ind = model.ind[batch_ind]
-            return model.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
+            ind = self.ind[batch_ind]
+            return self.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
 
-    def energy(self, model, batch_ind=None):
+    def energy(self, batch_ind=None, cubature=None, **kwargs):
         """
         The PL energy given in [1] is a poor approximation to the EP energy (although the gradients are ok, since
         the part they discard does not depends on the hyperparameters). Therefore, we can choose to use either
@@ -369,68 +379,95 @@ class PosteriorLinearisation(Inference):
         TODO: develop a PL energy approximation that reuses the linearisation quantities and matches GHS / UKS etc.
         [1] Garcia-Fernandez, Tronarp, Särkkä (2018) 'Gaussian process classification using posterior linearisation'
         """
-        return self.energy_function(model, batch_ind)
+        if batch_ind is None:
+            batch_ind = np.arange(self.num_data)
+            scale = 1
+        else:
+            scale = self.num_data / batch_ind.shape[0]
+
+        # compute the cavity distribution
+        cavity_mean, cavity_cov = self.cavity_distribution(None, 1.)  # TODO: check batch_ind is not required
+        cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(None, cavity_mean, cavity_cov)
+
+        # calculate log marginal likelihood and the new sites via moment matching:
+        # EP expected density is log E_q[p(y|f)]
+        lZ, _, _ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+            self.Y[batch_ind],
+            cav_mean_f[batch_ind],
+            cav_cov_f[batch_ind],
+            1.,
+            cubature
+        )
+
+        if self.mask_y is not None:
+            if np.squeeze(self.mask_y[batch_ind]).ndim != np.squeeze(lZ).ndim:
+                raise NotImplementedError('masking in spatio-temporal models not implemented for EP')
+            lZ = np.where(np.squeeze(self.mask_y[batch_ind]), 0., np.squeeze(lZ))  # apply mask
+
+        pseudo_y, pseudo_var = self.compute_full_pseudo_lik()
+        lZ_pseudo = mvn_logpdf_(
+            pseudo_y,
+            cavity_mean,
+            pseudo_var + cavity_cov,
+            self.mask_pseudo_y
+        )
+
+        if isinstance(self, SparseGP):
+            pseudo_y, pseudo_var = self.compute_global_pseudo_lik()
+            # TODO: check derivation for SparseGP. May take different form
+            # lZ_post = np.sum(vmap(self.compute_log_lik)(pseudo_y, pseudo_var))
+        # else:
+        lZ_post = self.compute_log_lik(pseudo_y, pseudo_var)
+
+        ep_energy = -(
+                lZ_post
+                + (scale * np.nansum(lZ) - np.nansum(lZ_pseudo))
+        )
+
+        return ep_energy
 
 
-class Taylor(Inference):
+class Taylor(PosteriorLinearisation):  # TODO: inherits energy from PL - implement custom method that avoids cubature
     """
     Inference using analytical linearisation, i.e. a first order Taylor expansion. This is equivalent to
     the Extended Kalman Smoother when using a Markov GP.
     """
-    def __init__(self,
-                 cubature=GaussHermite(),  # cubature is only used in the energy calc. TODO: remove need for this
-                 energy_function=None):
-        super().__init__(cubature=cubature)
-        self.name = 'Taylor / Extended Kalman Smoother (EKS)'
-        if energy_function is None:
-            self.energy_function = ExpectationPropagation(power=1, cubature=cubature).energy
-            # self.energy_function = VariationalInference(cubature=cubature).energy
-        else:
-            self.energy_function = energy_function
 
-    def update(self, model, batch_ind=None, lr=1.):
+    def update_variational_params(self, batch_ind=None, lr=1., **kwargs):
         """
         """
         if batch_ind is None:
-            batch_ind = np.arange(model.num_data)
-        Y = model.Y[batch_ind]
+            batch_ind = np.arange(self.num_data)
+        Y = self.Y[batch_ind]
 
-        mean_f, cov_f = model.conditional_posterior_to_data(batch_ind)
+        mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # calculate the Jacobian of the observation model w.r.t. function fₙ and noise term rₙ
-        Jf, Jsigma = vmap(model.likelihood.analytical_linearisation)(mean_f, np.zeros_like(Y))  # evaluate at mean
+        Jf, _, Jsigma, _ = vmap(self.likelihood.analytical_linearisation)(mean_f, np.zeros_like(Y))  # evaluate at mean
 
         obs_cov = np.eye(Y.shape[1])  # observation noise scale is w.l.o.g. 1
         sigma = Jsigma @ obs_cov @ transpose(Jsigma)
-        likelihood_expectation, _ = vmap(model.likelihood.conditional_moments)(mean_f)
+        likelihood_expectation, _ = vmap(self.likelihood.conditional_moments)(mean_f)
         residual = Y.reshape(likelihood_expectation.shape) - likelihood_expectation  # residual, yₙ-E[yₙ|fₙ]
 
         mask = np.isnan(residual)
         residual = np.where(mask, 0., residual)
 
-        Jf_invsigma = transpose(vmap(solve)(sigma, Jf))  # Jf^T @ sigma
+        Jf_invsigma = transpose(solve(sigma, Jf))  # Jf^T inv(sigma)
         jacobian = Jf_invsigma @ residual
         hessian = -Jf_invsigma @ Jf
 
         # deal with missing data
         jacobian = np.where(mask, np.nan, jacobian)
-        hessian = np.where(diag(np.squeeze(mask, axis=-1)), np.nan, hessian)
+        hessian = np.where(mask * np.eye(mask.shape[1]), np.nan, hessian)
 
-        jacobian, hessian = model.conditional_data_to_posterior(jacobian, hessian)
+        jacobian, hessian = self.conditional_data_to_posterior(jacobian, hessian)
 
         if mean_f.shape[1] == jacobian.shape[1]:
             return mean_f, jacobian, hessian
         else:
-            ind = model.ind[batch_ind]
-            return model.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
-
-    def energy(self, model, batch_ind=None):
-        """
-        Arguably, we should use the filtering energy here, such that the result matches that of the standard
-        extended Kalman smoother.
-        TODO: implement energy that matches standard EKS
-        """
-        return self.energy_function(model, batch_ind)
+            ind = self.ind[batch_ind]
+            return self.posterior_mean.value[ind], jacobian, hessian  # sparse Markov case
 
 
 class ExtendedKalmanSmoother(Taylor):

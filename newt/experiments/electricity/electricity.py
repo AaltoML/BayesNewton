@@ -31,12 +31,19 @@ else:
     fold = 0
 
 if len(sys.argv) > 3:
-    baseline = int(sys.argv[3])
+    baseline = bool(int(sys.argv[3]))
 else:
-    baseline = 0
+    baseline = True
 
-print('method number', method)
-print('batch number', fold)
+if len(sys.argv) > 4:
+    parallel = bool(int(sys.argv[4]))
+else:
+    parallel = None
+
+print('method number:', method)
+print('batch number:', fold)
+print('baseline:', baseline)
+print('parallel:', parallel)
 
 # Get training and test indices
 ind_test = ind_split[fold]  # np.sort(ind_shuffled[:N//10])
@@ -70,44 +77,53 @@ kern = newt.kernels.Sum([kern1, kern2])
 lik = newt.likelihoods.Gaussian(variance=var_y)
 
 if method == 0:
-    inf = newt.inference.Taylor()
+    inf = newt.inference.Taylor
 elif method == 1:
-    inf = newt.inference.PosteriorLinearisation()
-elif method == 2:
-    inf = newt.inference.ExpectationPropagation(power=1)
-elif method == 3:
-    inf = newt.inference.ExpectationPropagation(power=0.5)
-elif method == 4:
-    inf = newt.inference.ExpectationPropagation(power=0.01)
+    inf = newt.inference.PosteriorLinearisation
+elif method in [2, 3, 4]:
+    inf = newt.inference.ExpectationPropagation
 elif method == 5:
-    inf = newt.inference.VariationalInference()
+    inf = newt.inference.VariationalInference
 
 if baseline:
-    model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train)
+    mod = newt.models.MarkovGP
+    Mod = newt.build_model(mod, inf)
+    model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, parallel=parallel)
 else:
-    model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z)
+    mod = newt.models.SparseMarkovGP
+    Mod = newt.build_model(mod, inf)
+    model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z, parallel=parallel)
 
-trainable_vars = model.vars() + inf.vars()
-energy = objax.GradValues(inf.energy, trainable_vars)
+if method == 2:
+    inf_args = {"power": 1.}
+elif method == 3:
+    inf_args = {"power": 0.5}
+elif method == 4:
+    inf_args = {"power": 0.01}
+else:
+    inf_args = {}
+
 
 lr_adam = 0.1
 lr_newton = 0.1
 iters = 200
-opt = objax.optimizer.Adam(trainable_vars)
+opt_hypers = objax.optimizer.Adam(model.vars())
+energy = objax.GradValues(model.energy, model.vars())
 
 
+@objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    inf(model, lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy(model)  # compute energy and its gradients w.r.t. hypers
-    return dE, E
+    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
+    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    opt_hypers(lr_adam, dE)
+    return E
 
 
-train_op = objax.Jit(train_op, trainable_vars)
+train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    grad, loss = train_op()
-    opt(lr_adam, grad)
+    loss = train_op()
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
@@ -119,12 +135,12 @@ nlpd = model.negative_log_predictive_density(X=x_test, Y=y_test)
 t1 = time.time()
 print('NLPD: %1.2f' % nlpd)
 
-if baseline:
-    with open("output/baseline_" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
-        pickle.dump(nlpd, fp)
-else:
-    with open("output/" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
-        pickle.dump(nlpd, fp)
+# if baseline:
+#     with open("output/baseline_" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
+#         pickle.dump(nlpd, fp)
+# else:
+#     with open("output/" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
+#         pickle.dump(nlpd, fp)
 
 
 # if plot_final:

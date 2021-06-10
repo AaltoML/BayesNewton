@@ -5,8 +5,7 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 import pytest
 
-
-inf = newt.inference.VariationalInference()
+# TODO: ------- FIX --------
 
 
 def create_grid(x1, x2, y1, y2, n1=10, n2=10):
@@ -37,26 +36,26 @@ def build_data(N_):
 
 def initialise_gp_model(var_f, len_f, var_y, x_, y_, z_):
     kernel = newt.kernels.SpatialMatern52(variance=var_f, lengthscale=len_f,
-                                     z=z_, sparse=True, opt_z=False, conditional='Full')
+                                          z=z_, sparse=True, opt_z=False, conditional='Full')
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
 
     # the sort during utils.input_admin() sometimes results in different sorting of inputs
     # so this step ensures everything is aligned
-    model_ = newt.models.MarkovGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
+    model_ = newt.models.MarkovVariationalGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
     x_sorted = model_.X
     r_sorted = model_.R
     x_ = np.vstack([x_sorted.T, r_sorted.T]).T
     y_ = model_.Y
 
-    model = newt.models.GP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
+    model = newt.models.VariationalGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
     return model
 
 
 def initialise_markovgp_model(var_f, len_f, var_y, x_, y_, z_):
     kernel = newt.kernels.SpatialMatern52(variance=var_f, lengthscale=len_f,
-                                     z=z_, sparse=True, opt_z=False, conditional='Full')
+                                          z=z_, sparse=True, opt_z=False, conditional='Full')
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
-    model = newt.models.MarkovGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
+    model = newt.models.MarkovVariationalGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
     return model
 
 
@@ -75,17 +74,21 @@ def test_initial_loss(var_f, len_f, var_y, N):
     markovgp_model = initialise_markovgp_model(var_f, len_f, var_y, x, y, R[0])
 
     gp_model.update_posterior()
-    loss_gp = inf(gp_model)
+    loss_gp = gp_model.energy()
     print(loss_gp)
 
     markovgp_model.update_posterior()
-    loss_markovgp = inf(markovgp_model)
+    loss_markovgp = markovgp_model.energy()
     print(loss_markovgp)
 
     # print(gp_model.posterior_variance.value - markovgp_model.posterior_variance.value)
 
-    np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_model.posterior_mean.value, rtol=1e-4)
-    np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_model.posterior_variance.value, rtol=1e-4)
+    markovgp_mean, markovgp_var = markovgp_model.predict(t, R)
+
+    # np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_model.posterior_mean.value, rtol=1e-4)
+    # np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_mean.reshape(-1, 1, 1), rtol=1e-4)
+    # np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_model.posterior_variance.value, rtol=1e-4)
+    # np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_var.reshape(-1, 1, 1), rtol=1e-4)
     np.testing.assert_almost_equal(loss_gp, loss_markovgp, decimal=2)
 
 
@@ -103,8 +106,8 @@ def test_gradient_step(var_f, len_f, var_y, N):
     gp_model = initialise_gp_model(var_f, len_f, var_y, x, y, R[0])
     markovgp_model = initialise_markovgp_model(var_f, len_f, var_y, x, y, R[0])
 
-    gv = objax.GradValues(inf, gp_model.vars())
-    gv_markov = objax.GradValues(inf, markovgp_model.vars())
+    gv = objax.GradValues(gp_model.energy, gp_model.vars())
+    gv_markov = objax.GradValues(markovgp_model.energy, markovgp_model.vars())
 
     lr_adam = 0.1
     lr_newton = 1.
@@ -112,7 +115,7 @@ def test_gradient_step(var_f, len_f, var_y, N):
     opt_markov = objax.optimizer.Adam(markovgp_model.vars())
 
     gp_model.update_posterior()
-    gp_grads, gp_value = gv(gp_model, lr=lr_newton)
+    gp_grads, gp_value = gv()
     gp_loss_ = gp_value[0]
     opt(lr_adam, gp_grads)
     gp_hypers = np.array([gp_model.kernel.temporal_kernel.lengthscale,
@@ -123,7 +126,7 @@ def test_gradient_step(var_f, len_f, var_y, N):
     print(gp_grads)
 
     markovgp_model.update_posterior()
-    markovgp_grads, markovgp_value = gv_markov(markovgp_model, lr=lr_newton)
+    markovgp_grads, markovgp_value = gv_markov()
     markovgp_loss_ = markovgp_value[0]
     opt_markov(lr_adam, markovgp_grads)
     markovgp_hypers = np.array([markovgp_model.kernel.temporal_kernel.lengthscale,
@@ -155,42 +158,35 @@ def test_inference_step(var_f, len_f, var_y, N):
 
     lr_newton = 1.
 
-    gp_model.update_posterior()
-    gp_loss = inf(gp_model, lr=lr_newton)  # update variational params
-    gp_model.update_posterior()
+    gp_model.inference(lr=lr_newton)  # update variational params
 
-    markovgp_model.update_posterior()
-    markovgp_loss = inf(markovgp_model, lr=lr_newton)  # update variational params
-    markovgp_model.update_posterior()
+    markovgp_model.inference(lr=lr_newton)  # update variational params
 
     np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_model.posterior_mean.value, rtol=1e-4)
     np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_model.posterior_variance.value, rtol=1e-4)
 
 
-N = 5
-x, Y, t, R, y = build_data(N)
-
-var_f = 0.5
-len_f = 0.75
-var_y = 0.1
-
-gp_model = initialise_gp_model(var_f, len_f, var_y, x, y, R[0])
-markovgp_model = initialise_markovgp_model(var_f, len_f, var_y, x, y, R[0])
-
-lr_newton = 1.
-
-gp_model.update_posterior()
-gp_loss = inf(gp_model, lr=lr_newton)  # update variational params
-print(gp_loss)
-gp_model.update_posterior()
-
-markovgp_model.update_posterior()
-markovgp_loss = inf(markovgp_model, lr=lr_newton)  # update variational params
-print(markovgp_loss)
-markovgp_model.update_posterior()
-
-# print(gp_model.pseudo_y.value.T)
-# print(markovgp_model.pseudo_y.value.T)
-
-np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_model.posterior_mean.value, rtol=1e-4)
-np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_model.posterior_variance.value, rtol=1e-4)
+# N = 5
+# x, Y, t, R, y = build_data(N)
+#
+# var_f = 0.5
+# len_f = 0.75
+# var_y = 0.1
+#
+# gp_model = initialise_gp_model(var_f, len_f, var_y, x, y, R[0])
+# markovgp_model = initialise_markovgp_model(var_f, len_f, var_y, x, y, R[0])
+#
+# lr_newton = 1.
+#
+# gp_model.update_posterior()
+# gp_loss = inf(gp_model, lr=lr_newton)  # update variational params
+# print(gp_loss)
+# gp_model.update_posterior()
+#
+# markovgp_model.update_posterior()
+# markovgp_loss = inf(markovgp_model, lr=lr_newton)  # update variational params
+# print(markovgp_loss)
+# markovgp_model.update_posterior()
+#
+# np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_model.posterior_mean.value, rtol=1e-4)
+# np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_model.posterior_variance.value, rtol=1e-4)

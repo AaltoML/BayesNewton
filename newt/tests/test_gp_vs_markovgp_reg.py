@@ -5,8 +5,6 @@ from jax.config import config
 config.update("jax_enable_x64", True)
 import pytest
 
-inf = newt.inference.VariationalInference()
-
 
 def wiggly_time_series(x_):
     noise_var = 0.15  # true observation noise
@@ -32,14 +30,14 @@ def build_data(N):
 def initialise_gp_model(var_f, len_f, var_y, x, y):
     kernel = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
-    model = newt.models.GP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
+    model = newt.models.VariationalGP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
     return model
 
 
 def initialise_markovgp_model(var_f, len_f, var_y, x, y):
     kernel = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
-    model = newt.models.MarkovGP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
+    model = newt.models.MarkovVariationalGP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
     return model
 
 
@@ -58,11 +56,11 @@ def test_initial_loss(var_f, len_f, var_y, N):
     markovgp_model = initialise_markovgp_model(var_f, len_f, var_y, x, y)
 
     gp_model.update_posterior()
-    loss_gp = inf(gp_model)
+    loss_gp = gp_model.energy()
     print(loss_gp)
 
     markovgp_model.update_posterior()
-    loss_markovgp = inf(markovgp_model)
+    loss_markovgp = markovgp_model.energy()
     print(loss_markovgp)
 
     # print(posterior_mean - f_mean[:, 0])
@@ -86,8 +84,8 @@ def test_gradient_step(var_f, len_f, var_y, N):
     gp_model = initialise_gp_model(var_f, len_f, var_y, x, y)
     markovgp_model = initialise_markovgp_model(var_f, len_f, var_y, x, y)
 
-    gv = objax.GradValues(inf, gp_model.vars())
-    gv_markov = objax.GradValues(inf, markovgp_model.vars())
+    gv = objax.GradValues(gp_model.energy, gp_model.vars())
+    gv_markov = objax.GradValues(markovgp_model.energy, markovgp_model.vars())
 
     lr_adam = 0.1
     lr_newton = 1.
@@ -95,7 +93,7 @@ def test_gradient_step(var_f, len_f, var_y, N):
     opt_markov = objax.optimizer.Adam(markovgp_model.vars())
 
     gp_model.update_posterior()
-    gp_grads, gp_value = gv(gp_model, lr=lr_newton)
+    gp_grads, gp_value = gv()
     gp_loss_ = gp_value[0]
     opt(lr_adam, gp_grads)
     gp_hypers = np.array([gp_model.kernel.lengthscale, gp_model.kernel.variance, gp_model.likelihood.variance])
@@ -103,7 +101,7 @@ def test_gradient_step(var_f, len_f, var_y, N):
     print(gp_grads)
 
     markovgp_model.update_posterior()
-    markovgp_grads, markovgp_value = gv_markov(markovgp_model, lr=lr_newton)
+    markovgp_grads, markovgp_value = gv_markov()
     markovgp_loss_ = markovgp_value[0]
     opt_markov(lr_adam, markovgp_grads)
     markovgp_hypers = np.array([markovgp_model.kernel.lengthscale, markovgp_model.kernel.variance,
@@ -132,13 +130,9 @@ def test_inference_step(var_f, len_f, var_y, N):
 
     lr_newton = 1.
 
-    gp_model.update_posterior()
-    gp_loss = inf(gp_model, lr=lr_newton)  # update variational params
-    gp_model.update_posterior()
+    gp_model.inference(lr=lr_newton)  # update variational params
 
-    markovgp_model.update_posterior()
-    markovgp_loss = inf(markovgp_model, lr=lr_newton)  # update variational params
-    markovgp_model.update_posterior()
+    markovgp_model.inference(lr=lr_newton)  # update variational params
 
     np.testing.assert_allclose(gp_model.posterior_mean.value, markovgp_model.posterior_mean.value, rtol=1e-4)
     np.testing.assert_allclose(gp_model.posterior_variance.value, markovgp_model.posterior_variance.value, rtol=1e-4)

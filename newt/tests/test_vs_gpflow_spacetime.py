@@ -10,7 +10,7 @@ import scipy as sp
 
 gpflow.config.set_default_jitter(1e-32)
 
-inf = newt.inference.VariationalInference()
+# TODO: ------- FIX --------
 
 
 # def inv_(K):
@@ -57,15 +57,15 @@ def initialise_gp_model(var_f, len_f, var_y, x_, y_, z_):
     # x_ = np.vstack([x_sorted.T, r_sorted.T]).T
     # y_ = model_.Y
 
-    model = newt.models.GP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
+    model = newt.models.VariationalGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
     return model
 
 
 def initialise_markovgp_model(var_f, len_f, var_y, x_, y_, z_):
     kernel = newt.kernels.SpatialMatern52(variance=var_f, lengthscale=len_f,
-                                     z=z_, sparse=True, opt_z=False, conditional='Full')
+                                          z=z_, sparse=True, opt_z=False, conditional='Full')
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
-    model = newt.models.MarkovGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
+    model = newt.models.MarkovVariationalGP(kernel=kernel, likelihood=likelihood, X=x_, Y=y_)
     return model
 
 
@@ -127,12 +127,12 @@ def test_initial_loss(var_f_, len_f_, var_y_, N_):
 
     gp_model.update_posterior()
     f_mean_gp, f_var_gp = gp_model.predict(x_)
-    loss_gp = inf(gp_model)
+    loss_gp = gp_model.energy()
     print(loss_gp)
 
     markovgp_model.update_posterior()
     f_mean_markovgp, f_var_markovgp = markovgp_model.predict(x_)
-    loss_markovgp = inf(markovgp_model)
+    loss_markovgp = markovgp_model.energy()
     print(loss_markovgp)
     data = (x_, y_[..., None])
     f_mean_gpflow, f_var_gpflow = gpflow_model.predict_f(x_[None], full_cov=False, full_output_cov=False)

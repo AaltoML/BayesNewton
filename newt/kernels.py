@@ -36,8 +36,8 @@ class StationaryKernel(Kernel):
     """
 
     def __init__(self,
-                 variance,
-                 lengthscale,
+                 variance=1.0,
+                 lengthscale=1.0,
                  fix_variance=False,
                  fix_lengthscale=False):
         # check whether the parameters are to be optimised
@@ -202,7 +202,6 @@ class Matern52(StationaryKernel):
         return self.variance * (1.0 + sqrt5 * r + 5.0 / 3.0 * np.square(r)) * np.exp(-sqrt5 * r)
 
     def kernel_to_state_space(self, R=None):
-        # uses variance and lengthscale hyperparameters to construct the state space model
         lam = 5.0**0.5 / self.lengthscale
         F = np.array([[0.0, 1.0, 0.0],
                       [0.0, 0.0, 1.0],
@@ -461,14 +460,6 @@ class SpatioTemporalKernel(Kernel):
         Pinf = np.kron(np.eye(self.M), Pinf_time)
         return Pinf
 
-    def stationary_covariance_meanfield(self):
-        """
-        Stationary covariance as a tensor of blocks, as required when using a mean-field assumption
-        """
-        Pinf_time = self.temporal_kernel.stationary_covariance()
-        Pinf = np.tile(Pinf_time, [self.M, 1, 1])
-        return Pinf
-
     def measurement_model(self):
         """
         Compute the spatial conditional, i.e. the measurement model projecting the state x(t) to function space
@@ -486,16 +477,6 @@ class SpatioTemporalKernel(Kernel):
         """
         A_time = self.temporal_kernel.state_transition(dt)
         A = np.kron(np.eye(self.M), A_time)
-        return A
-
-    def state_transition_meanfield(self, dt):
-        """
-        State transition matrix in the form required for mean-field inference.
-        :param dt: step size(s), Δtₙ = tₙ - tₙ₋₁ [scalar]
-        :return: state transition matrix A
-        """
-        A_time = self.temporal_kernel.state_transition(dt)
-        A = np.tile(A_time, [self.M, 1, 1])
         return A
 
     def kernel_to_state_space(self, R=None):
@@ -1157,3 +1138,61 @@ class Sum(Independent):
                 H, H_
             ])
         return H
+
+
+class Separable(Independent):
+    """
+    A product of separable GP priors. 'components' is a list of GP kernels, and this class stacks
+    the state space models to produce their product.
+    This class differs from Independent only in the measurement model.
+    TODO: this assumes that each kernel acts on a different dimension. Generalise.
+    TODO: implement state space form of product kernels
+    """
+    def __init__(self, kernels):
+        super().__init__(kernels=kernels)
+        self.name = 'Product'
+
+    def K(self, X, X2):
+        Kprod = self.kernel0.K(X[:, :1], X2[:, :1])
+        for i in range(1, self.num_kernels):
+            kerneli = eval("self.kernel" + str(i))
+            Kprod = Kprod * kerneli.K(X[:, i:i+1], X2[:, i:i+1])
+        return Kprod
+
+    # def measurement_model(self):
+    #     H = self.kernel0.measurement_model()
+    #     for i in range(1, self.num_kernels):
+    #         kerneli = eval("self.kernel" + str(i))
+    #         H_ = kerneli.measurement_model()
+    #         H = np.block([
+    #             H, H_
+    #         ])
+    #     return H
+
+
+class SpectroTemporal(Independent):
+
+    def __init__(self,
+                 subband_lengthscales,
+                 subband_frequencies,
+                 modulator_variances,
+                 modulator_lengthscales,
+                 subband_kernel=SubbandMatern12,
+                 modulator_kernel=Matern32):
+        assert len(subband_lengthscales) == len(subband_frequencies)
+        assert len(modulator_lengthscales) == len(modulator_variances)
+        num_subbands = len(subband_frequencies)
+        num_modulators = len(modulator_lengthscales)
+        radial_freq = 2 * np.pi * subband_frequencies  # radial freq = 2pi * f
+        kernels = [subband_kernel(variance=1, lengthscale=subband_lengthscales[0], radial_frequency=radial_freq[0],
+                                  fix_variance=True)]
+        for i in range(1, num_subbands):
+            kernels.append(
+                subband_kernel(variance=1, lengthscale=subband_lengthscales[i], radial_frequency=radial_freq[i],
+                               fix_variance=True)
+            )
+        for j in range(num_modulators):
+            kernels.append(
+                modulator_kernel(variance=modulator_variances[j], lengthscale=modulator_lengthscales[j])
+            )
+        super().__init__(kernels=kernels)

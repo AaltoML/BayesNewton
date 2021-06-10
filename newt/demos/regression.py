@@ -14,11 +14,7 @@ def wiggly_time_series(x_):
 
 np.random.seed(12345)
 N = 100
-# x0 = np.random.permutation(np.linspace(-25.0, 30.0, num=N//2) + 1*np.random.randn(N//2))  # unevenly spaced
-# x1 = np.random.permutation(np.linspace(60.0, 150.0, num=N//2) + 1*np.random.randn(N//2))  # unevenly spaced
-# x = np.concatenate([x0, x1], axis=0)
 x = np.linspace(-17, 147, num=N)
-x = np.sort(x, axis=0)
 y = wiggly_time_series(x)
 x_test = np.linspace(np.min(x)-15.0, np.max(x)+15.0, num=500)
 # x_test = np.linspace(-32.5, 157.5, num=250)
@@ -29,53 +25,49 @@ batch_size = N
 z = np.linspace(-30, 155, num=M)
 # z = x
 
-
-z = z[:, None]
-x = x[:, None]
-x_plot = x_plot[:, None]
-
 var_f = 1.0  # GP variance
 len_f = 5.0  # GP lengthscale
 var_y = 0.5  # observation noise
 
 kern = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = newt.likelihoods.Gaussian(variance=var_y)
-# model = newt.models.GP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.SparseGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, opt_z=True)
-# model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
-model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
-
-inf = newt.inference.VariationalInference()
-# inf = newt.inference.Laplace()
-# inf = newt.inference.PosteriorLinearisation()
-# inf = newt.inference.Taylor()
-# inf = newt.inference.ExpectationPropagation(power=0.5)
-
-trainable_vars = model.vars() + inf.vars()
-energy = objax.GradValues(inf.energy, trainable_vars)
+model = newt.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.SparseVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+# model = newt.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
 lr_adam = 0.1
 lr_newton = 1
 iters = 20
-opt = objax.optimizer.Adam(trainable_vars)
+opt_hypers = objax.optimizer.Adam(model.vars())
+energy = objax.GradValues(model.energy, model.vars())
+inf_args = {
+    "power": 0.5,  # the EP power
+}
 
 
+@objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    batch = np.random.permutation(N)[:batch_size]
-    inf(model, lr=lr_newton, batch_ind=batch)  # perform inference and update variational params
-    dE, E = energy(model, batch_ind=batch)  # compute energy and its gradients w.r.t. hypers
-    return dE, E
+    # batch = np.random.permutation(N)[:batch_size]
+    # model.inference(lr=lr_newton, batch_ind=batch, **inf_args)  # perform inference and update variational params
+    # dE, E = energy(batch_ind=batch, **inf_args)  # compute energy and its gradients w.r.t. hypers
+    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
+    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    opt_hypers(lr_adam, dE)
+    return E
 
 
-train_op = objax.Jit(train_op, trainable_vars)
+train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    grad, loss = train_op()
-    opt(lr_adam, grad)
+    loss = train_op()
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
+
+# posterior_samples = model.posterior_sample(X=x_plot, num_samps=20)  # only implemented for Markov GPs
 
 t0 = time.time()
 posterior_mean, posterior_var = model.predict_y(X=x_plot)
@@ -92,8 +84,8 @@ plt.clf()
 plt.plot(x, y, 'k.', label='training observations')
 plt.plot(x_test, y_test, 'r.', alpha=0.4, label='test observations')
 plt.plot(x_plot, posterior_mean, 'b', label='posterior mean')
-plt.fill_between(x_plot[:, 0], lb, ub, color='b', alpha=0.05, label='95% confidence')
-# plt.plot(x_plot, posterior_samp, 'b', alpha=0.15)
+# plt.plot(x_plot, posterior_samples.T, 'b', alpha=0.2)
+plt.fill_between(x_plot, lb, ub, color='b', alpha=0.05, label='95% confidence')
 plt.xlim([x_plot[0], x_plot[-1]])
 if hasattr(model, 'Z'):
     plt.plot(model.Z.value[:, 0], -2 * np.ones_like(model.Z.value[:, 0]), 'b^', markersize=5)

@@ -10,28 +10,42 @@ import itertools
 
 class Cubature(objax.Module):
 
+    def __init__(self, dim=None):
+        if dim is None:  # dimension of cubature not known upfront
+            self.store = False
+        else:  # dimension known, store sigma points and weights
+            self.store = True
+            self.x, self.w = self.get_cubature_points_and_weights(dim)
+
     def __call__(self, dim):
+        if self.store:
+            return self.x, self.w
+        else:
+            return self.get_cubature_points_and_weights(dim)
+
+    def get_cubature_points_and_weights(self, dim):
         raise NotImplementedError
 
 
 class GaussHermite(Cubature):
 
-    def __init__(self, num_cub_points=20):
+    def __init__(self, dim=None, num_cub_points=20):
         self.num_cub_points = num_cub_points
+        super().__init__(dim)
 
-    def __call__(self, dim):
+    def get_cubature_points_and_weights(self, dim):
         return gauss_hermite(dim, self.num_cub_points)
 
 
 class UnscentedThirdOrder(Cubature):
 
-    def __call__(self, dim):
+    def get_cubature_points_and_weights(self, dim):
         return symmetric_cubature_third_order(dim)
 
 
 class UnscentedFifthOrder(Cubature):
 
-    def __call__(self, dim):
+    def get_cubature_points_and_weights(self, dim):
         return symmetric_cubature_fifth_order(dim)
 
 
@@ -103,7 +117,7 @@ def symmetric_cubature_third_order(dim=1, kappa=None):
 
 def symmetric_cubature_fifth_order(dim=1):
     """
-    Return weights and sigma-points for the symmetric cubature rule of order 5.
+    Return weights and sigma-points for the symmetric cubature rule of order 5
     Uses 2(dim**2)+1 sigma-points
     """
     # The weights and sigma-points from McNamee & Stenger
@@ -325,8 +339,19 @@ def moment_match_cubature(likelihood, y, cav_mean, cav_cov, power=1.0, cubature=
 def statistical_linear_regression_cubature(likelihood, mean, cov, cubature=None):
     """
     Perform statistical linear regression (SLR) using cubature.
-    We aim to find a likelihood approximation p(yₙ|fₙ) ≈ 𝓝(yₙ|Afₙ+b,Ω+Var[yₙ|fₙ]).
+    We aim to find a likelihood approximation p(yₙ|fₙ) ≈ 𝓝(yₙ|Afₙ+b,Ω).
     TODO: this currently assumes an additive noise model (ok for our current applications), make more general
+    """
+    mu, omega = expected_conditional_mean(likelihood, mean, cov, cubature)
+    dmu_dm = expected_conditional_mean_dm(likelihood, mean, cov, cubature)
+    d2mu_dm2 = expected_conditional_mean_dm2(likelihood, mean, cov, cubature)
+    # return mu.reshape(-1, 1), omega, dmu_dm[None], d2mu_dm2[None]
+    return mu.reshape(-1, 1), omega, dmu_dm[None], np.swapaxes(d2mu_dm2, axis1=0, axis2=2)
+
+
+def expected_conditional_mean(likelihood, mean, cov, cubature=None):
+    """
+    Compute Eq[E[y|f]] = ∫ Ey[p(y|f)] 𝓝(f|mean,cov) dfₙ
     """
     if cubature is None:
         x, w = gauss_hermite(mean.shape[0], 20)  # Gauss-Hermite sigma points and weights
@@ -335,32 +360,38 @@ def statistical_linear_regression_cubature(likelihood, mean, cov, cubature=None)
     # fsigᵢ=xᵢ√(vₙ) + mₙ: scale locations according to cavity dist.
     sigma_points = cholesky(cov) @ np.atleast_2d(x) + mean
     lik_expectation, lik_covariance = likelihood.conditional_moments(sigma_points)
-    # Compute zₙ via cubature:
-    # zₙ = ∫ E[yₙ|fₙ] 𝓝(fₙ|mₙ,vₙ) dfₙ
+    # Compute muₙ via cubature:
+    # muₙ = ∫ E[yₙ|fₙ] 𝓝(fₙ|mₙ,vₙ) dfₙ
     #    ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ]
     mu = np.sum(
         w * lik_expectation, axis=-1
     )[:, None]
-    # Compute variance S via cubature:
-    # S = ∫ [(E[yₙ|fₙ]-zₙ) (E[yₙ|fₙ]-zₙ)' + Cov[yₙ|fₙ]] 𝓝(fₙ|mₙ,vₙ) dfₙ
-    #   ≈ ∑ᵢ wᵢ [(E[yₙ|fsigᵢ]-zₙ) (E[yₙ|fsigᵢ]-zₙ)' + Cov[yₙ|fₙ]]
-    # TODO: allow for multi-dim cubature
     S = np.sum(
-        w * ((lik_expectation - mu) * (lik_expectation - mu) + lik_covariance), axis=-1
+        w * ((lik_expectation - mu) @ (lik_expectation - mu).T + lik_covariance), axis=-1
     )[:, None]
     # Compute cross covariance C via cubature:
-    # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-zₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
-    #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-zₙ)'
+    # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-muₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
+    #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-muₙ)'
     C = np.sum(
         w * (sigma_points - mean) * (lik_expectation - mu), axis=-1
     )[:, None]
-    # Compute derivative of z via cubature:
-    # d_mu = ∫ E[yₙ|fₙ] vₙ⁻¹ (fₙ-mₙ) 𝓝(fₙ|mₙ,vₙ) dfₙ
-    #      ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ] vₙ⁻¹ (fsigᵢ-mₙ)
-    d_mu = np.sum(
-        w * lik_expectation * (solve(cov, sigma_points - mean)), axis=-1
-    )[None, :]
-    return mu, S, C, d_mu
+    # compute equivalent likelihood noise, omega
+    omega = S - C.T @ solve(cov, C)
+    return np.squeeze(mu), omega
+
+
+def expected_conditional_mean_dm(likelihood, mean, cov, cubature=None):
+    """
+    """
+    dmu_dm, _ = grad(expected_conditional_mean, argnums=1, has_aux=True)(likelihood, mean, cov, cubature)
+    return np.squeeze(dmu_dm)
+
+
+def expected_conditional_mean_dm2(likelihood, mean, cov, cubature=None):
+    """
+    """
+    d2mu_dm2 = jacrev(expected_conditional_mean_dm, argnums=1)(likelihood, mean, cov, cubature)
+    return d2mu_dm2
 
 
 def predict_cubature(likelihood, mean_f, var_f, cubature=None):

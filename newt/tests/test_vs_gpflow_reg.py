@@ -9,9 +9,6 @@ import tensorflow as tf
 import gpflow
 
 
-inf = newt.inference.VariationalInference()
-
-
 def wiggly_time_series(x_):
     noise_var = 0.15  # true observation noise
     return (np.cos(0.04*x_+0.33*np.pi) * np.sin(0.2*x_) +
@@ -35,7 +32,7 @@ def build_data(N):
 def initialise_newt_model(var_f, len_f, var_y, x, y):
     kernel = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
-    model = newt.models.GP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
+    model = newt.models.VariationalGP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
     return model
 
 
@@ -88,7 +85,7 @@ def test_initial_loss(var_f, len_f, var_y, N):
     gpflow_model = initialise_gpflow_model(var_f, len_f, var_y, x, y)
 
     newt_model.update_posterior()
-    loss_newt = inf.energy(newt_model)
+    loss_newt = newt_model.energy()
     # _, _, expected_density = newt_model.inference(newt_model)
     print(loss_newt)
     # print(expected_density)
@@ -121,14 +118,14 @@ def test_gradient_step(var_f, len_f, var_y, N):
     newt_model = initialise_newt_model(var_f, len_f, var_y, x, y)
     gpflow_model = initialise_gpflow_model(var_f, len_f, var_y, x, y)
 
-    gv = objax.GradValues(inf.energy, newt_model.vars())
+    gv = objax.GradValues(newt_model.energy, newt_model.vars())
 
     lr_adam = 0.1
     lr_newton = 1.
     opt = objax.optimizer.Adam(newt_model.vars())
 
     newt_model.update_posterior()
-    newt_grads, value = gv(newt_model)  # , lr=lr_newton)
+    newt_grads, value = gv()  # , lr=lr_newton)
     loss_ = value[0]
     opt(lr_adam, newt_grads)
     newt_hypers = np.array([newt_model.kernel.lengthscale, newt_model.kernel.variance, newt_model.likelihood.variance])
@@ -171,9 +168,7 @@ def test_inference_step(var_f, len_f, var_y, N):
 
     lr_newton = 1.
 
-    newt_model.update_posterior()
-    newt_loss = inf(newt_model, lr=lr_newton)  # update variational params
-    newt_model.update_posterior()
+    newt_model.inference(lr=lr_newton)  # update variational params
 
     data = (x, y[:, None])
     with tf.GradientTape() as tape:

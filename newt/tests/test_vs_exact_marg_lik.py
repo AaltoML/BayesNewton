@@ -6,9 +6,6 @@ config.update("jax_enable_x64", True)
 import pytest
 
 
-inf = newt.inference.VariationalInference()
-
-
 def wiggly_time_series(x_):
     noise_var = 0.15  # true observation noise
     return (np.cos(0.04*x_+0.33*np.pi) * np.sin(0.2*x_) +
@@ -33,7 +30,7 @@ def build_data(N):
 def initialise_gp_model(var_f, len_f, var_y, x, y):
     kernel = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
     likelihood = newt.likelihoods.Gaussian(variance=var_y)
-    model = newt.models.GP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
+    model = newt.models.VariationalGP(kernel=kernel, likelihood=likelihood, X=x, Y=y)
     return model
 
 
@@ -50,10 +47,8 @@ def test_marg_lik(var_f, len_f, var_y, N):
 
     gp_model = initialise_gp_model(var_f, len_f, var_y, x, y)
 
-    gp_model.update_posterior()
-    loss_gp = inf(gp_model)
-    gp_model.update_posterior()
-    loss_gp = inf(gp_model)
+    gp_model.inference(lr=1.)  # update variational params
+    loss_gp = gp_model.energy()
     print(loss_gp)
 
     K_X = gp_model.kernel(x, x)

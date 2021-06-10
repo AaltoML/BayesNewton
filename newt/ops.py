@@ -77,6 +77,7 @@ def sparse_conditional_post_to_data(kernel, post_mean, post_cov, X, Z):
         mean: posterior mean [N, 1]
         covariance: posterior covariance [N, N]
     """
+    X = X.reshape(-1, 1)
     Kff = kernel(X, X)
     Kuf = kernel(Z, X)
     Kuu = kernel(Z, Z)
@@ -125,7 +126,7 @@ def _sequential_kf(As, Qs, H, ys, noise_covs, m0, P0, masks, return_predict=Fals
     return loglik, fms, fPs
 
 
-def kalman_filter(dt, kernel, y, noise_cov, mask=None, use_sequential=True, return_predict=False):
+def kalman_filter(dt, kernel, y, noise_cov, mask=None, parallel=False, return_predict=False):
     """
     Run the Kalman filter to get p(fₙ|y₁,...,yₙ).
     Assumes a heteroscedastic Gaussian observation model, i.e. var is vector valued
@@ -134,7 +135,7 @@ def kalman_filter(dt, kernel, y, noise_cov, mask=None, use_sequential=True, retu
     :param y: observations [N, D, 1]
     :param noise_cov: observation noise covariances [N, D, D]
     :param mask: boolean mask for the observations (to indicate missing data locations) [N, D, 1]
-    :param use_sequential: flag to switch between parallel and sequential implementation of Kalman filter
+    :param parallel: flag to switch between parallel and sequential implementation of Kalman filter
     :param return_predict: flag whether to return predicted state, rather than updated state
     :return:
         ell: the log-marginal likelihood log p(y), for hyperparameter optimisation (learning) [scalar]
@@ -150,10 +151,10 @@ def kalman_filter(dt, kernel, y, noise_cov, mask=None, use_sequential=True, retu
     Qs = vmap(process_noise_covariance, [0, None])(As, Pinf)
     H = kernel.measurement_model()
 
-    if use_sequential:
-        ell, means, covs = _sequential_kf(As, Qs, H, y, noise_cov, minf, Pinf, mask, return_predict=return_predict)
+    if parallel:
+        raise NotImplementedError
     else:
-        raise NotImplementedError("Parallel KF not implemented yet")
+        ell, means, covs = _sequential_kf(As, Qs, H, y, noise_cov, minf, Pinf, mask, return_predict=return_predict)
     return ell, (means, covs)
 
 
@@ -183,7 +184,7 @@ def _sequential_rts(fms, fPs, As, Qs, H, return_full):
     return sms, sPs, gains
 
 
-def rauch_tung_striebel_smoother(dt, kernel, filter_mean, filter_cov, return_full=False, use_sequential=True):
+def rauch_tung_striebel_smoother(dt, kernel, filter_mean, filter_cov, return_full=False, parallel=False):
     """
     Run the RTS smoother to get p(fₙ|y₁,...,y_N),
     :param dt: step sizes [N, 1]
@@ -191,7 +192,7 @@ def rauch_tung_striebel_smoother(dt, kernel, filter_mean, filter_cov, return_ful
     :param filter_mean: the intermediate distribution means computed during filtering [N, state_dim, 1]
     :param filter_cov: the intermediate distribution covariances computed during filtering [N, state_dim, state_dim]
     :param return_full: a flag determining whether to return the full state distribution or just the function(s)
-    :param use_sequential: flag to switch between parallel and sequential implementation of smoother
+    :param parallel: flag to switch between parallel and sequential implementation of smoother
     :return:
         smoothed_mean: the posterior marginal means [N, obs_dim]
         smoothed_var: the posterior marginal variances [N, obs_dim]
@@ -202,26 +203,30 @@ def rauch_tung_striebel_smoother(dt, kernel, filter_mean, filter_cov, return_ful
     Qs = vmap(process_noise_covariance, [0, None])(As, Pinf)
     H = kernel.measurement_model()
 
-    if use_sequential:
-        means, covs, gains = _sequential_rts(filter_mean, filter_cov, As, Qs, H, return_full)
+    if parallel:
+        raise NotImplementedError
     else:
-        raise NotImplementedError("Parallel RTS not implemented yet")
+        means, covs, gains = _sequential_rts(filter_mean, filter_cov, As, Qs, H, return_full)
     return means, covs, gains
 
 
-def kalman_filter_pairs(dt, kernel, y, noise_cov, use_sequential=True):
+def kalman_filter_pairs(dt, kernel, y, noise_cov, mask=None, parallel=False):
     """
     A Kalman filter over pairs of states, in which y is [2state_dim, 1] and noise_cov is [2state_dim, 2state_dim]
     :param dt: step sizes [N, 1]
     :param kernel: an instantiation of the kernel class, used to determine the state space model
     :param y: observations [N, 2state_dim, 1]
     :param noise_cov: observation noise covariances [N, 2state_dim, 2state_dim]
-    :param use_sequential: flag to switch between parallel and sequential implementation of Kalman filter
+    :param mask: boolean mask for the observations (to indicate missing data locations) [N, 2state_dim, 1]
+    :param parallel: flag to switch between parallel and sequential implementation of Kalman filter
     :return:
         ell: the log-marginal likelihood log p(y), for hyperparameter optimisation (learning) [scalar]
         means: marginal state filtering means [N, state_dim, 1]
         covs: marginal state filtering covariances [N, state_dim, state_dim]
     """
+    if mask is None:
+        mask = np.zeros_like(y, dtype=bool)
+
     Pinf = kernel.stationary_covariance()
     state_dim = Pinf.shape[0]
     minf = np.zeros([state_dim, 1])
@@ -237,16 +242,15 @@ def kalman_filter_pairs(dt, kernel, y, noise_cov, use_sequential=True):
     def construct_pair(A, Q):
         Apair = np.block([[zeros, np.eye(state_dim)],
                           [zeros, A]])
-        Qpair = np.block([[zeros, zeros],
-                          [zeros, Q]])
+        Qpair = np.block([[1e-32 * np.eye(state_dim), zeros],  # jitter avoids numerical errors in parallel filter init
+                          [zeros,                     Q]])
         return Apair, Qpair
 
     Apairs, Qpairs = vmap(construct_pair)(As, Qs)
     H = np.eye(2 * state_dim)
-    masks = np.zeros_like(y, dtype=bool)
 
-    if use_sequential:
-        ell, means, covs = _sequential_kf(Apairs, Qpairs, H, y, noise_cov, minfpair, Pinfpair, masks)
+    if parallel:
+        raise NotImplementedError
     else:
-        raise NotImplementedError("Parallel KF not implemented yet")
+        ell, means, covs = _sequential_kf(Apairs, Qpairs, H, y, noise_cov, minfpair, Pinfpair, mask)
     return ell, (means[1:, :state_dim], covs[1:, :state_dim, :state_dim])

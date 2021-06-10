@@ -6,7 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 from scipy.io import loadmat
-import pickle
 
 print('loading data ...')
 y = loadmat('speech_female')['y']
@@ -32,7 +31,7 @@ if len(sys.argv) > 1:
     # plot_final = False
     # save_result = True
 else:
-    method = 2
+    method = 8
     # plot_final = True
     # save_result = False
 
@@ -42,30 +41,30 @@ else:
     fold = 0
 
 if len(sys.argv) > 3:
-    baseline = bool(int(sys.argv[3]))
-else:
-    baseline = True
-
-if len(sys.argv) > 4:
-    parallel = bool(int(sys.argv[4]))
+    parallel = bool(int(sys.argv[3]))
 else:
     parallel = None
 
-if len(sys.argv) > 5:
-    num_components = int(sys.argv[5])
+if len(sys.argv) > 4:
+    num_subbands = int(sys.argv[4])
 else:
-    num_components = 3
+    num_subbands = 4
+
+if len(sys.argv) > 5:
+    num_modulators = int(sys.argv[5])
+else:
+    num_modulators = 2
 
 if len(sys.argv) > 6:
     iters = int(sys.argv[6])
 else:
-    iters = 10
+    iters = 25
 
 print('method number:', method)
 print('batch number:', fold)
-print('baseline:', baseline)
 print('parallel:', parallel)
-print('num components:', num_components)
+print('num subbands:', num_subbands)
+print('num modulators:', num_modulators)
 print('num iterations:', iters)
 
 # Get training and test indices
@@ -77,14 +76,14 @@ y_train = y[ind_train]
 y_test = y[ind_test]
 
 fundamental_freq = 220  # Hz
-radial_freq = 2 * np.pi * fundamental_freq / scale  # radial freq = 2pi * f / scale
+# radial_freq = 2 * np.pi * fundamental_freq / scale  # radial freq = 2pi * f / scale
 
 subband_kernel = newt.kernels.SubbandMatern12
-modulator_kernel = newt.kernels.Matern52
-subband_frequencies = radial_freq * (np.arange(num_components) + 1)
-subband_lengthscales = 75. * np.ones(num_components)
-modulator_lengthscales = 10. * np.ones(num_components)
-modulator_variances = 0.5 * np.ones(num_components)
+modulator_kernel = newt.kernels.Matern32
+subband_frequencies = fundamental_freq / scale * (np.arange(num_subbands) + 1)
+subband_lengthscales = 75. * np.ones(num_subbands)
+modulator_lengthscales = 10. * np.ones(num_modulators)
+modulator_variances = 0.5 * np.ones(num_modulators)
 
 kern = newt.kernels.SpectroTemporal(
     subband_lengthscales=subband_lengthscales,
@@ -95,31 +94,29 @@ kern = newt.kernels.SpectroTemporal(
     modulator_kernel=modulator_kernel
 )
 
-lik = newt.likelihoods.AudioAmplitudeDemodulation(num_components=num_components, variance=0.3)
-
+lik = newt.likelihoods.NonnegativeMatrixFactorisation(
+    num_subbands=num_subbands,
+    num_modulators=num_modulators,
+    variance=0.3
+)
 
 if method == 0:
     inf = newt.inference.Taylor
 elif method == 1:
     inf = newt.inference.PosteriorLinearisation
 elif method in [2, 3, 4]:
-    inf = newt.inference.ExpectationPropagationPSD
-    # inf = newt.inference.ExpectationPropagation
+    inf = newt.inference.ExpectationPropagation
 elif method == 5:
-    inf = newt.inference.VariationalInferencePSD
-    # inf = newt.inference.VariationalInference
+    inf = newt.inference.VariationalInference
+elif method == 6:
+    inf = newt.inference.Laplace
 print('inference method:', inf)
 
-if baseline:
-    mod = newt.models.MarkovGP
-    Mod = newt.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, parallel=parallel)
-else:
-    mod = newt.models.SparseMarkovGP
-    Mod = newt.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z, parallel=parallel)
+mod = newt.models.MarkovGP
+Mod = newt.build_model(mod, inf)
+model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, parallel=parallel)
 
-unscented_transform = Unscented(dim=num_components)  # 5th-order unscented transform
+unscented_transform = Unscented(dim=num_modulators)  # 5th-order unscented transform
 
 if method == 2:
     inf_args = {"power": 1., "cubature": unscented_transform}
@@ -131,8 +128,8 @@ else:
     inf_args = {"cubature": unscented_transform}
 
 
-lr_adam = 0.05
-lr_newton = 0.5
+lr_adam = 0.01
+lr_newton = 0.1
 opt_hypers = objax.optimizer.Adam(model.vars())
 energy = objax.GradValues(model.energy, model.vars())
 
@@ -167,24 +164,19 @@ t1 = time.time()
 print('NLPD: %1.2f' % nlpd)
 print('prediction time: %2.2f secs' % (t1-t0))
 
-# if save_result:
-#     if baseline:
-#         with open("output/baseline_" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
-#             pickle.dump(nlpd, fp)
-#     else:
-#         with open("output/" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
-#             pickle.dump(nlpd, fp)
-
 # if plot_final:
 posterior_mean, posterior_var = model.predict(X=x)
 # lb = posterior_mean[:, 0] - np.sqrt(posterior_var[:, 0]) * 1.96
 # ub = posterior_mean[:, 0] + np.sqrt(posterior_var[:, 0]) * 1.96
 
-posterior_mean_subbands = posterior_mean[:, :num_components]
-posterior_mean_modulators = newt.utils.softplus(posterior_mean[:, num_components:])
-posterior_mean_sig = np.sum(posterior_mean_subbands * posterior_mean_modulators, axis=-1)
-posterior_var_subbands = posterior_var[:, :num_components]
-posterior_var_modulators = newt.utils.softplus(posterior_var[:, num_components:])
+posterior_mean_subbands = posterior_mean[:, :num_subbands]
+posterior_mean_modulators = newt.utils.softplus(posterior_mean[:, num_subbands:])
+posterior_mean_sig = np.sum(
+    posterior_mean_subbands * (model.likelihood.weights[None] @ posterior_mean_modulators[..., None])[..., 0],
+    axis=-1
+)
+posterior_var_subbands = posterior_var[:, :num_subbands]
+posterior_var_modulators = newt.utils.softplus(posterior_var[:, num_subbands:])
 
 print('plotting ...')
 plt.figure(1, figsize=(12, 5))

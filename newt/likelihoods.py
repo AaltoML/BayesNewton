@@ -1,7 +1,7 @@
 import objax
 import jax.numpy as np
 from jax import grad, jacrev, vmap
-from jax.scipy.special import erf, gammaln
+from jax.scipy.special import erf, gammaln, logsumexp
 from jax.scipy.linalg import cholesky
 from .cubature import (
     gauss_hermite,
@@ -17,6 +17,7 @@ from .utils import (
     softplus,
     softplus_inv,
     sigmoid,
+    sigmoid_diff,
     pep_constant,
     mvn_logpdf,
     mvn_logpdf_and_derivs
@@ -153,11 +154,13 @@ class Likelihood(objax.Module):
         v = np.diag(v).reshape(-1, 1, 1)
 
         # compute SLR
-        mu, S, C, d_mu = vmap(self.statistical_linear_regression_, (0, 0, None))(m, v, cubature)
-
-        omega = S - transpose(C) @ (1 / v) @ C
-
-        return np.squeeze(mu, axis=2), np.diag(np.squeeze(d_mu, axis=(1, 2))), np.diag(np.squeeze(omega, axis=(1, 2)))
+        mu, omega, d_mu, d2_mu = vmap(self.statistical_linear_regression_, (0, 0, None))(m, v, cubature)
+        return (
+            np.squeeze(mu, axis=2),
+            np.diag(np.squeeze(omega, axis=(1, 2))),
+            np.diag(np.squeeze(d_mu, axis=(1, 2))),
+            np.diag(np.squeeze(d2_mu, axis=(1, 2))),
+        )
 
     def observation_model(self, f, sigma):
         """
@@ -168,6 +171,12 @@ class Likelihood(objax.Module):
         obs_model = conditional_expectation + cholesky(conditional_covariance) @ sigma
         return np.squeeze(obs_model)
 
+    def jac_obs(self, f, sigma):
+        return np.squeeze(jacrev(self.observation_model, argnums=0)(f, sigma))
+
+    def jac_obs_sigma(self, f, sigma):
+        return np.squeeze(jacrev(self.observation_model, argnums=1)(f, sigma))
+
     def analytical_linearisation(self, m, sigma=None):
         """
         Compute the Jacobian of the state space observation model w.r.t. the
@@ -175,7 +184,7 @@ class Likelihood(objax.Module):
         The implicit observation model is:
             h(fₙ,rₙ) = E[yₙ|fₙ] + √Cov[yₙ|fₙ] σₙ
         The Jacobians are evaluated at the means, fₙ=m, σₙ=0, to be used during
-        Extended Kalman filtering and Extended EP.
+        Extended Kalman smoothing.
         """
         sigma = np.array([[0.0]]) if sigma is None else sigma
 
@@ -184,7 +193,15 @@ class Likelihood(objax.Module):
 
         Jf, Jsigma = vmap(jacrev(self.observation_model, argnums=(0, 1)))(m, sigma)
 
-        return np.diag(np.squeeze(Jf, axis=(1, 2))), np.diag(np.squeeze(Jsigma, axis=(1, 2)))
+        Hf = vmap(jacrev(self.jac_obs, argnums=0))(m, sigma)
+        Hsigma = vmap(jacrev(self.jac_obs_sigma, argnums=1))(m, sigma)
+
+        return (
+            np.diag(np.squeeze(Jf, axis=(1, 2))),
+            np.diag(np.squeeze(Hf, axis=(1, 2))),
+            np.diag(np.squeeze(Jsigma, axis=(1, 2))),
+            np.diag(np.squeeze(Hsigma, axis=(1, 2))),
+        )
 
     def predict(self, mean_f, var_f, cubature=None):
         """
@@ -441,11 +458,13 @@ class Poisson(Likelihood):
         """
         super().__init__()
         if link == 'exp':
-            self.link_fn = lambda mu: np.exp(mu)
-            self.dlink_fn = lambda mu: np.exp(mu)
+            self.link_fn = np.exp
+            self.dlink_fn = np.exp
+            self.d2link_fn = np.exp
         elif link == 'logistic':
-            self.link_fn = lambda mu: softplus(mu)
-            self.dlink_fn = lambda mu: sigmoid(mu)
+            self.link_fn = softplus
+            self.dlink_fn = sigmoid
+            self.d2link_fn = sigmoid_diff
         else:
             raise NotImplementedError('link function not implemented')
         self.binsize = np.array(binsize)
@@ -508,9 +527,15 @@ class Poisson(Likelihood):
         """
         link_fm = self.link_fn(m) * self.binsize
         dlink_fm = self.dlink_fn(m) * self.binsize
-        Jf = np.diag(np.squeeze(link_fm + 0.5 * link_fm ** -0.5 * dlink_fm * sigma, axis=-1))
+        d2link_fm = self.d2link_fn(m) * self.binsize
+        Jf = np.diag(np.squeeze(dlink_fm + 0.5 * link_fm ** -0.5 * dlink_fm * sigma.reshape(-1, 1), axis=-1))
+        Hf = np.diag(np.squeeze(d2link_fm
+                                - 0.25 * link_fm ** -1.5 * dlink_fm ** 2 * sigma.reshape(-1, 1)
+                                + 0.5 * link_fm ** -0.5 * d2link_fm * sigma.reshape(-1, 1)
+                                , axis=-1))
         Jsigma = np.diag(np.squeeze(link_fm ** 0.5, axis=-1))
-        return Jf, Jsigma
+        Hsigma = np.zeros_like(Jsigma)
+        return Jf, Hf, Jsigma, Hsigma
 
     def variational_expectation_(self, y, post_mean, post_cov, cubature=None):
         """
@@ -544,6 +569,120 @@ class Poisson(Likelihood):
         return exp_log_lik, dE_dm, d2E_dm2.reshape(-1, 1)
 
 
+def negative_binomial(m, y, alpha):
+    k = 1 / alpha
+    return (
+        gammaln(k + y)
+        - gammaln(y + 1)
+        - gammaln(k)
+        + y * np.log(m / (m + k))
+        - k * np.log(1 + m * alpha)
+    )
+
+
+class NegativeBinomial(Likelihood):
+    """
+    BinTayyash et. al. 2021: Non-Parametric Modelling of Temporal and Spatial Counts Data From RNA-SEQ Experiments
+    """
+    def __init__(self,
+                 alpha=1.0,
+                 link='exp',
+                 scale=1.0):
+        """
+        :param link: link function, either 'exp' or 'logistic'
+        """
+        super().__init__()
+        if link == 'exp':
+            self.link_fn = lambda mu: np.exp(mu)
+            self.dlink_fn = lambda mu: np.exp(mu)
+        elif link == 'logistic':
+            self.link_fn = lambda mu: softplus(mu)
+            self.dlink_fn = lambda mu: sigmoid(mu)
+        else:
+            raise NotImplementedError('link function not implemented')
+        self.transformed_alpha = objax.TrainVar(np.array(softplus_inv(alpha)))
+        self.scale = np.array(scale)
+        self.name = 'Negative Binomial'
+
+    @property
+    def alpha(self):
+        return softplus(self.transformed_alpha.value)
+
+    def evaluate_likelihood(self, y, f):
+        """
+        """
+        return np.exp(self.evaluate_log_likelihood(y, f))
+
+    def evaluate_log_likelihood(self, y, f):
+        """
+        """
+        return negative_binomial(self.link_fn(f) * self.scale, y, self.alpha)
+
+    def conditional_moments(self, f):
+        """
+        """
+        conditional_expectation = self.link_fn(f) * self.scale
+        conditional_covariance = conditional_expectation + conditional_expectation ** 2 * self.alpha
+        return conditional_expectation, conditional_covariance
+
+
+class ZeroInflatedNegativeBinomial(Likelihood):
+    """
+    BinTayyash et. al. 2021: Non-Parametric Modelling of Temporal and Spatial Counts Data From RNA-SEQ Experiments
+    """
+    def __init__(self,
+                 alpha=1.0,
+                 km=1.0,
+                 link='exp'):
+        """
+        :param link: link function, either 'exp' or 'logistic'
+        """
+        super().__init__()
+        if link == 'exp':
+            self.link_fn = lambda mu: np.exp(mu)
+            self.dlink_fn = lambda mu: np.exp(mu)
+        elif link == 'logistic':
+            self.link_fn = lambda mu: softplus(mu)
+            self.dlink_fn = lambda mu: sigmoid(mu)
+        else:
+            raise NotImplementedError('link function not implemented')
+        self.transformed_alpha = objax.TrainVar(np.array(softplus_inv(alpha)))
+        self.transformed_km = objax.TrainVar(np.array(km))
+        self.name = 'Negative Binomial'
+
+    @property
+    def alpha(self):
+        return softplus(self.transformed_alpha.value)
+
+    @property
+    def km(self):
+        return softplus(self.transformed_km.value)
+
+    def evaluate_likelihood(self, y, f):
+        """
+        """
+        return np.exp(self.evaluate_log_likelihood(y, f))
+
+    def evaluate_log_likelihood(self, y, f):
+        """
+        """
+        m = self.link_fn(f)
+        psi = 1. - (m / (self.km + m))
+        nb_zero = - np.log(1. + m * self.alpha) / self.alpha
+        log_p_zero = logsumexp(np.array([np.log(psi), np.log(1. - psi) + nb_zero]), axis=0)
+        log_p_nonzero = np.log(1. - psi) + negative_binomial(m, y, self.alpha)
+        return np.where(y == 0, log_p_zero, log_p_nonzero)
+
+    def conditional_moments(self, f):
+        """
+        """
+        m = self.link_fn(f)
+        psi = 1. - (m / (self.km + m))
+        conditional_expectation = m * (1 - psi)
+        conditional_covariance = conditional_expectation * (1 + m * (psi + self.alpha))
+        return conditional_expectation, conditional_covariance
+
+
 class HeteroscedasticNoise(Likelihood):
     """
     The Heteroscedastic Noise likelihood:
@@ -555,11 +694,13 @@ class HeteroscedasticNoise(Likelihood):
         """
         super().__init__()
         if link == 'exp':
-            self.link_fn = lambda mu: np.exp(mu)
-            self.dlink_fn = lambda mu: np.exp(mu)
+            self.link_fn = np.exp
+            self.dlink_fn = np.exp
+            self.d2link_fn = np.exp
         elif link == 'softplus':
-            self.link_fn = lambda mu: softplus(mu) + 1e-10
-            self.dlink_fn = lambda mu: sigmoid(mu)
+            self.link_fn = softplus
+            self.dlink_fn = sigmoid
+            self.d2link_fn = sigmoid_diff
         else:
             raise NotImplementedError('link function not implemented')
         self.name = 'Heteroscedastic Noise'
@@ -604,7 +745,7 @@ class HeteroscedasticNoise(Likelihood):
         lZ = np.log(np.maximum(Z, 1e-8))
         return lZ
 
-    def moment_match(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+    def moment_match__(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
         """
         TODO: implement proper Hessian approx., as done in variational_expectation()
         """
@@ -642,6 +783,45 @@ class HeteroscedasticNoise(Likelihood):
 
         return lZ, dlZ, d2lZ
 
+    def log_density_power(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        if cubature is None:
+            x, w = gauss_hermite(1, 20)  # Gauss-Hermite sigma points and weights
+        else:
+            x, w = cubature(1)
+        # sigma_points = np.sqrt(2) * np.sqrt(v) * x + m  # scale locations according to cavity dist.
+        sigma_points = np.sqrt(cav_cov[1, 1]) * x + cav_mean[1]  # fsigᵢ=xᵢ√cₙ + mₙ: scale locations according to cavity
+
+        f2 = self.link_fn(sigma_points) ** 2. / power
+        obs_var = f2 + cav_cov[0, 0]
+        const = power ** -0.5 * (2 * np.pi * self.link_fn(sigma_points) ** 2.) ** (0.5 - 0.5 * power)
+        normpdf = const * (2 * np.pi * obs_var) ** -0.5 * np.exp(-0.5 * (y - cav_mean[0, 0]) ** 2 / obs_var)
+        Z = np.sum(w * normpdf)
+        lZ = np.log(np.maximum(Z, 1e-8))
+        return lZ
+
+    def log_density_dm(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        dE_dm = grad(self.log_density_power, argnums=1)(y, cav_mean, cav_cov, power, cubature)
+        return dE_dm
+
+    def log_density_dm2(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        d2E_dm2 = jacrev(self.log_density_dm, argnums=1)(y, cav_mean, cav_cov, power, cubature)
+        return np.squeeze(d2E_dm2)
+
+    def moment_match(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        E = self.log_density_power(y, cav_mean, cav_cov, power, cubature)
+        dE_dm = self.log_density_dm(y, cav_mean, cav_cov, power, cubature)
+        d2E_dm2 = self.log_density_dm2(y, cav_mean, cav_cov, power, cubature)
+        # a, b, c = self.moment_match__(y, cav_mean, cav_cov, power, cubature)
+        return E, dE_dm, d2E_dm2
+
     def log_expected_likelihood(self, y, x, w, cav_mean, cav_var, power):
         sigma_points = np.sqrt(cav_var[1]) * x + cav_mean[1]
         f2 = self.link_fn(sigma_points) ** 2. / power
@@ -659,7 +839,7 @@ class HeteroscedasticNoise(Likelihood):
             x, w = gauss_hermite(2, 20)  # Gauss-Hermite sigma points and weights
         else:
             x, w = cubature(2)
-        v = (v + v.T) / 2
+        # v = (v + v.T) / 2
         sigma_points = cholesky(v) @ x + m  # fsigᵢ=xᵢ√(2vₙ) + mₙ: scale locations according to cavity dist.
         # Compute expected log likelihood via cubature:
         # E[log p(yₙ|fₙ)] = ∫ log p(yₙ|fₙ) 𝓝(fₙ|mₙ,vₙ) dfₙ
@@ -704,20 +884,20 @@ class HeteroscedasticNoise(Likelihood):
         # fsigᵢ=xᵢ√(vₙ) + mₙ: scale locations according to cavity dist.
         sigma_points = cholesky(cov) @ x + mean
         var = self.link_fn(sigma_points[1]) ** 2
-        # Compute zₙ via cubature:
-        # zₙ = ∫ E[yₙ|fₙ] 𝓝(fₙ|mₙ,vₙ) dfₙ
+        # Compute muₙ via cubature:
+        # muₙ = ∫ E[yₙ|fₙ] 𝓝(fₙ|mₙ,vₙ) dfₙ
         #    ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ]
         mu = m0.reshape(1, 1)
         # Compute variance S via cubature:
-        # S = ∫ [(E[yₙ|fₙ]-zₙ) (E[yₙ|fₙ]-zₙ)' + Cov[yₙ|fₙ]] 𝓝(fₙ|mₙ,vₙ) dfₙ
-        #   ≈ ∑ᵢ wᵢ [(E[yₙ|fsigᵢ]-zₙ) (E[yₙ|fsigᵢ]-zₙ)' + Cov[yₙ|fₙ]]
+        # S = ∫ [(E[yₙ|fₙ]-muₙ) (E[yₙ|fₙ]-muₙ)' + Cov[yₙ|fₙ]] 𝓝(fₙ|mₙ,vₙ) dfₙ
+        #   ≈ ∑ᵢ wᵢ [(E[yₙ|fsigᵢ]-muₙ) (E[yₙ|fsigᵢ]-muₙ)' + Cov[yₙ|fₙ]]
         S = v0 + np.sum(
             w * var
         )
         S = S.reshape(1, 1)
         # Compute cross covariance C via cubature:
-        # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-zₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
-        #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-zₙ)'
+        # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-muₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
+        #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-muₙ)'
         C = np.sum(
             w * (sigma_points - mean) * (sigma_points[0] - m0), axis=-1
         ).reshape(2, 1)
@@ -726,35 +906,67 @@ class HeteroscedasticNoise(Likelihood):
         #      ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ] vₙ⁻¹ (fsigᵢ-mₙ)
         d_mu = np.block([[1., 0.]])
         omega = S - transpose(C) @ solve(cov, C)
-        return mu, d_mu, omega
+        d2_mu = np.nan  # TODO: IMPLEMENT
+        return mu, omega, d_mu, d2_mu
+
+    # def analytical_linearisation(self, m, sigma=None):
+    #     """
+    #     Compute the Jacobian of the state space observation model w.r.t. the
+    #     function fₙ and the noise term σₙ.
+    #     """
+    #     Jf = np.block([[np.array(1.0), self.dlink_fn(m[1]) * sigma]])
+    #     Hf = np.block([[np.array(0.0), np.array(0.0)],
+    #                    [np.array(0.0), self.d2link_fn(m[1]) * sigma]])
+    #     Jsigma = self.link_fn(np.array([m[1]]))
+    #     Hsigma = np.zeros_like(Jsigma)
+    #     return Jf, Hf, Jsigma, Hsigma
 
     def analytical_linearisation(self, m, sigma=None):
         """
         Compute the Jacobian of the state space observation model w.r.t. the
         function fₙ and the noise term σₙ.
+        The implicit observation model is:
+            h(fₙ,rₙ) = E[yₙ|fₙ] + √Cov[yₙ|fₙ] σₙ
+        The Jacobians are evaluated at the means, fₙ=m, σₙ=0, to be used during
+        Extended Kalman smoothing.
         """
-        return np.block([[np.array(1.0), self.dlink_fn(m[1]) * sigma]]), self.link_fn(np.array([m[1]]))
+        sigma = np.array([[0.0]]) if sigma is None else sigma
+
+        Jf, Jsigma = jacrev(self.observation_model, argnums=(0, 1))(m, sigma)
+
+        Hf = jacrev(self.jac_obs, argnums=0)(m, sigma)
+        Hsigma = jacrev(self.jac_obs_sigma, argnums=1)(m, sigma)
+
+        return Jf.T, np.swapaxes(Hf, axis1=0, axis2=2), Jsigma[None], Hsigma[None]
 
 
-class AudioAmplitudeDemodulation(Likelihood):
+class NonnegativeMatrixFactorisation(Likelihood):
     """
-    The Audio Amplitude Demodulation likelihood
+    The Nonnegative Matrix Factorisation likelihood
     """
-    def __init__(self, variance=0.1):
+    def __init__(self, num_subbands, num_modulators, variance=0.1, weights=None):
         """
         param hyp: observation noise
         """
         self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
         super().__init__()
-        self.name = 'Audio Amplitude Demodulation'
-        # self.link_fn = lambda f: softplus(f)
+        self.name = 'Nonnegative Matrix Factorisation'
         self.link_fn = softplus
-        # self.dlink_fn = lambda f: sigmoid(f)  # derivative of the link function
         self.dlink_fn = sigmoid  # derivative of the link function
+        self.d2link_fn = sigmoid_diff   # 2nd derivative of the link function
+        self.num_subbands = num_subbands
+        self.num_modulators = num_modulators
+        if weights is None:
+            weights = objax.random.uniform(shape=(num_subbands, num_modulators))
+        self.transformed_weights = objax.TrainVar(softplus_inv(weights))
 
     @property
     def variance(self):
         return softplus(self.transformed_variance.value)
+
+    @property
+    def weights(self):
+        return softplus(self.transformed_weights.value)
 
     def evaluate_likelihood(self, y, f):
         """
@@ -768,160 +980,227 @@ class AudioAmplitudeDemodulation(Likelihood):
         Evaluate the log-likelihood
         """
         mu, var = self.conditional_moments(f)
-        return -0.5 * np.log(2 * np.pi * var) - 0.5 * (y - mu) ** 2 / var
+        return np.squeeze(-0.5 * np.log(2 * np.pi * var) - 0.5 * (y - mu) ** 2 / var)
 
     def conditional_moments(self, f):
         """
         """
-        num_components = int(f.shape[0] / 2)
-        subbands, modulators = f[:num_components], self.link_fn(f[num_components:])
-        return np.sum(subbands * modulators).reshape(-1, 1), np.array([[self.variance]])
+        subbands, modulators = f[:self.num_subbands], self.link_fn(f[self.num_subbands:])
+        return np.sum(subbands * (self.weights @ modulators)).reshape(-1, 1), np.array([[self.variance]])
         # return np.atleast_2d(modulators.T @ subbands),  np.atleast_2d(obs_noise_var)
 
-    def moment_match(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
-        """
-        """
-        num_components = int(cav_mean.shape[0] / 2)
-        if cubature is None:
-            x, w = gauss_hermite(num_components, 20)  # Gauss-Hermite sigma points and weights
-        else:
-            x, w = cubature(num_components)
-
-        # subband_mean, modulator_mean = cav_mean[:num_components], self.link_fn(cav_mean[num_components:])
-        subband_mean, modulator_mean = cav_mean[:num_components], cav_mean[num_components:]  # TODO: CHECK
-        subband_cov, modulator_cov = cav_cov[:num_components, :num_components], cav_cov[num_components:, num_components:]
-        sigma_points = cholesky(modulator_cov) @ x + modulator_mean
-        const = power ** -0.5 * (2 * np.pi * self.variance) ** (0.5 - 0.5 * power)
-        mu = (self.link_fn(sigma_points).T @ subband_mean)[:, 0]
-        var = self.variance / power + (self.link_fn(sigma_points).T ** 2 @ np.diag(subband_cov)[..., None])[:, 0]
-        normpdf = const * (2 * np.pi * var) ** -0.5 * np.exp(-0.5 * (y - mu) ** 2 / var)
-        Z = np.sum(w * normpdf)
-        Zinv = 1. / (Z + 1e-8)
-        lZ = np.log(Z + 1e-8)
-
-        dZ1 = np.sum(w * self.link_fn(sigma_points) * (y - mu) / var * normpdf, axis=-1)
-        dZ2 = np.sum(w * (sigma_points - modulator_mean) * np.diag(modulator_cov)[..., None] ** -1 * normpdf, axis=-1)
-        dlZ = Zinv * np.block([dZ1, dZ2])
-
-        d2Z1 = np.sum(w * self.link_fn(sigma_points) ** 2 * (
-            ((y - mu) / var) ** 2
-            - var ** -1
-        ) * normpdf, axis=-1)
-        d2Z2 = np.sum(w * (
-            ((sigma_points - modulator_mean) * np.diag(modulator_cov)[..., None] ** -1) ** 2
-            - np.diag(modulator_cov)[..., None] ** -1
-        ) * normpdf, axis=-1)
-        d2lZ = np.diag(-dlZ ** 2 + Zinv * np.block([d2Z1, d2Z2]))
-
-        # id2lZ = inv_any(d2lZ + 1e-10 * np.eye(d2lZ.shape[0]))
-        # site_mean = cav_mean - id2lZ @ dlZ[..., None]  # approx. likelihood (site) mean (see Rasmussen & Williams p75)
-        # site_cov = -power * (cav_cov + id2lZ)  # approx. likelihood (site) variance
-        return lZ, dlZ[..., None], d2lZ
+    def log_likelihood_gradients(self, y, f):
+        log_lik, J, H = self.log_likelihood_gradients_(y, f)
+        return log_lik, J, H
 
     def log_density(self, y, mean, cov, cubature=None):
         """
         """
-        num_components = int(mean.shape[0] / 2)
         if cubature is None:
-            x, w = gauss_hermite(num_components, 20)  # Gauss-Hermite sigma points and weights
+            x, w = gauss_hermite(self.num_modulators, 20)  # Gauss-Hermite sigma points and weights
         else:
-            x, w = cubature(num_components)
+            x, w = cubature(self.num_modulators)
 
-        # subband_mean, modulator_mean = mean[:num_components], self.link_fn(mean[num_components:])
-        subband_mean, modulator_mean = mean[:num_components], mean[num_components:]  # TODO: CHECK
-        subband_cov, modulator_cov = cov[:num_components, :num_components], cov[num_components:,
-                                                                                num_components:]
+        # subband_mean, modulator_mean = mean[:self.num_subbands], self.link_fn(mean[self.num_subbands:])
+        subband_mean, modulator_mean = mean[:self.num_subbands], mean[self.num_subbands:]  # TODO: CHECK
+        subband_cov = cov[:self.num_subbands, :self.num_subbands]
+        modulator_cov = cov[self.num_subbands:, self.num_subbands:]
+        subband_var = np.diag(subband_cov)[..., None]
         sigma_points = cholesky(modulator_cov) @ x + modulator_mean
-        mu = (self.link_fn(sigma_points).T @ subband_mean)[:, 0]
-        var = self.variance + (self.link_fn(sigma_points).T ** 2 @ np.diag(subband_cov)[..., None])[:, 0]
+        modulator_mean_positive = self.weights @ self.link_fn(sigma_points)
+        mu = (modulator_mean_positive.T @ subband_mean)[:, 0]
+        var = self.variance + (modulator_mean_positive.T ** 2 @ subband_var)[:, 0]
         normpdf = (2 * np.pi * var) ** -0.5 * np.exp(-0.5 * (y - mu) ** 2 / var)
         Z = np.sum(w * normpdf)
         lZ = np.log(Z + 1e-8)
         return lZ
 
-    def statistical_linear_regression(self, mean, cov, cubature=None):
+    def log_density_power(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
         """
-        This gives the same result as above - delete
         """
-        num_components = int(mean.shape[0] / 2)
         if cubature is None:
-            x, w = gauss_hermite(num_components, 20)  # Gauss-Hermite sigma points and weights
+            x, w = gauss_hermite(self.num_modulators, 20)  # Gauss-Hermite sigma points and weights
         else:
-            x, w = cubature(num_components)
+            x, w = cubature(self.num_modulators)
+
+        subband_mean, modulator_mean = cav_mean[:self.num_subbands], cav_mean[self.num_subbands:]  # TODO: CHECK
+        subband_cov = cav_cov[:self.num_subbands, :self.num_subbands]
+        modulator_cov = cav_cov[self.num_subbands:, self.num_subbands:]
+        subband_var = np.diag(subband_cov)[..., None]
+        sigma_points = cholesky(modulator_cov) @ x + modulator_mean
+        modulator_mean_positive = self.weights @ self.link_fn(sigma_points)
+        const = power ** -0.5 * (2 * np.pi * self.variance) ** (0.5 - 0.5 * power)
+        mu = (modulator_mean_positive.T @ subband_mean)[:, 0]
+        var = self.variance / power + (modulator_mean_positive.T ** 2 @ subband_var)[:, 0]
+        normpdf = const * (2 * np.pi * var) ** -0.5 * np.exp(-0.5 * (y - mu) ** 2 / var)
+        Z = np.sum(w * normpdf)
+        lZ = np.log(Z + 1e-8)
+        return lZ
+
+    def log_density_dm(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        dE_dm = grad(self.log_density_power, argnums=1)(y, cav_mean, cav_cov, power, cubature)
+        return dE_dm
+
+    def log_density_dm2(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        d2E_dm2 = jacrev(self.log_density_dm, argnums=1)(y, cav_mean, cav_cov, power, cubature)
+        return np.squeeze(d2E_dm2)
+
+    def moment_match(self, y, cav_mean, cav_cov, power=1.0, cubature=None):
+        """
+        """
+        E = self.log_density_power(y, cav_mean, cav_cov, power, cubature)
+        dE_dm = self.log_density_dm(y, cav_mean, cav_cov, power, cubature)
+        d2E_dm2 = self.log_density_dm2(y, cav_mean, cav_cov, power, cubature)
+        return E, dE_dm, d2E_dm2
+
+    def expected_conditional_mean(self, mean, cov, cubature=None):
+        """
+        Compute Eq[E[y|f]] = ∫ Ey[p(y|f)] 𝓝(f|mean,cov) dfₙ
+        TODO: this needs checking - not sure the weights have been applied correctly
+        """
+        if cubature is None:
+            x, w = gauss_hermite(self.num_modulators, 20)  # Gauss-Hermite sigma points and weights
+        else:
+            x, w = cubature(self.num_modulators)
 
         # subband_mean, modulator_mean = mean[:num_components], self.link_fn(mean[num_components:])
-        subband_mean, modulator_mean = mean[:num_components], mean[num_components:]  # TODO: CHECK
-        subband_cov, modulator_cov = cov[:num_components, :num_components], cov[num_components:,
-                                                                                        num_components:]
+        subband_mean, modulator_mean = mean[:self.num_subbands], mean[self.num_subbands:]  # TODO: CHECK
+        subband_cov = cov[:self.num_subbands, :self.num_subbands]
+        modulator_cov = cov[self.num_subbands:, self.num_subbands:]
+        subband_var = np.diag(subband_cov)[..., None]
+
         sigma_points = cholesky(modulator_cov) @ x + modulator_mean
-        lik_expectation, lik_covariance = (self.link_fn(sigma_points).T @ subband_mean).T, self.variance
-        # Compute zₙ via cubature:
+        modulator_mean_positive = self.weights @ self.link_fn(sigma_points)
+        lik_expectation, lik_covariance = (modulator_mean_positive.T @ subband_mean).T, self.variance
+        # Compute muₙ via cubature:
         # muₙ = ∫ E[yₙ|fₙ] 𝓝(fₙ|mₙ,vₙ) dfₙ
         #    ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ]
         mu = np.sum(
             w * lik_expectation, axis=-1
         )[:, None]
         # Compute variance S via cubature:
-        # S = ∫ [(E[yₙ|fₙ]-zₙ) (E[yₙ|fₙ]-zₙ)' + Cov[yₙ|fₙ]] 𝓝(fₙ|mₙ,vₙ) dfₙ
-        #   ≈ ∑ᵢ wᵢ [(E[yₙ|fsigᵢ]-zₙ) (E[yₙ|fsigᵢ]-zₙ)' + Cov[yₙ|fₙ]]
+        # S = ∫ [(E[yₙ|fₙ]-muₙ) (E[yₙ|fₙ]-muₙ)' + Cov[yₙ|fₙ]] 𝓝(fₙ|mₙ,vₙ) dfₙ
+        #   ≈ ∑ᵢ wᵢ [(E[yₙ|fsigᵢ]-muₙ) (E[yₙ|fsigᵢ]-muₙ)' + Cov[yₙ|fₙ]]
         S = np.sum(
             w * ((lik_expectation - mu) * (lik_expectation - mu) + lik_covariance), axis=-1
         )[:, None]
         # Compute cross covariance C via cubature:
-        # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-zₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
-        #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-zₙ)'
+        # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-muₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
+        #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-muₙ)'
         C = np.sum(
-            w * np.block([[self.link_fn(sigma_points) * np.diag(subband_cov)[..., None]],
+            w * np.block([[modulator_mean_positive * subband_var],
                           [sigma_points - modulator_mean]]) * (lik_expectation - mu), axis=-1
         )[:, None]
-        # Compute derivative of mu via cubature:
-        d_mu = np.sum(
-            w * np.block([[self.link_fn(sigma_points)],
-                          [np.diag(modulator_cov)[..., None] ** -1 * (sigma_points - modulator_mean) * lik_expectation]]), axis=-1
-        )[None, :]
-        omega = S - transpose(C) @ solve(cov, C)
-        return mu, d_mu, omega
+        # compute equivalent likelihood noise, omega
+        omega = S - C.T @ solve(cov, C)
+        return np.squeeze(mu), omega
+
+    def expected_conditional_mean_dm(self, mean, cov, cubature=None):
+        """
+        """
+        dmu_dm, _ = grad(self.expected_conditional_mean, argnums=0, has_aux=True)(mean, cov, cubature)
+        return np.squeeze(dmu_dm)
+
+    def expected_conditional_mean_dm2(self, mean, cov, cubature=None):
+        """
+        """
+        d2mu_dm2 = jacrev(self.expected_conditional_mean_dm, argnums=0)(mean, cov, cubature)
+        return d2mu_dm2
+
+    def statistical_linear_regression(self, mean, cov, cubature=None):
+        mu, omega = self.expected_conditional_mean(mean, cov, cubature)
+        dmu_dm = self.expected_conditional_mean_dm(mean, cov, cubature)
+        d2mu_dm2 = self.expected_conditional_mean_dm2(mean, cov, cubature)
+        # return mu.reshape(-1, 1), omega, dmu_dm[None], d2mu_dm2[None]
+        return mu.reshape(-1, 1), omega, dmu_dm[None], np.swapaxes(d2mu_dm2, axis1=0, axis2=2)
+
+    def expected_log_likelihood(self, y, post_mean, post_cov, cubature=None):
+        """
+        """
+        if cubature is None:
+            x, w = gauss_hermite(self.num_modulators, 20)  # Gauss-Hermite sigma points and weights
+        else:
+            x, w = cubature(self.num_modulators)
+
+        # subband_mean, modulator_mean = post_mean[:self.num_subbands], self.link_fn(post_mean[self.num_subbands:])
+        subband_mean, modulator_mean = post_mean[:self.num_subbands], post_mean[self.num_subbands:]  # TODO: CHECK
+        subband_cov = post_cov[:self.num_subbands, :self.num_subbands]
+        modulator_cov = post_cov[self.num_subbands:, self.num_subbands:]
+        sigma_points = cholesky(modulator_cov) @ x + modulator_mean
+        modulator_mean_positive = self.weights @ self.link_fn(sigma_points)
+
+        subband_var = np.diag(subband_cov)[..., None]
+        mu = (modulator_mean_positive.T @ subband_mean)[:, 0]
+        lognormpdf = -0.5 * np.log(2 * np.pi * self.variance) - 0.5 * (y - mu) ** 2 / self.variance
+        const = -0.5 / self.variance * (modulator_mean_positive.T ** 2 @ subband_var)[:, 0]
+        exp_log_lik = np.sum(w * (lognormpdf + const))
+        return exp_log_lik
+
+    def expected_log_likelihood_dm(self, y, post_mean, post_cov, cubature=None):
+        """
+        """
+        dE_dm = grad(self.expected_log_likelihood, argnums=1)(y, post_mean, post_cov, cubature)
+        return dE_dm
+
+    def expected_log_likelihood_dm2(self, y, post_mean, post_cov, cubature=None):
+        """
+        """
+        d2E_dm2 = jacrev(self.expected_log_likelihood_dm, argnums=1)(y, post_mean, post_cov, cubature)
+        return np.squeeze(d2E_dm2)
 
     def variational_expectation(self, y, post_mean, post_cov, cubature=None):
         """
+        Compute expected log likelihood via cubature:
+        E[log p(yₙ|fₙ)] = ∫ log p(yₙ|fₙ) 𝓝(fₙ|mₙ,vₙ) dfₙ
         """
-        num_components = int(post_mean.shape[0] / 2)
-        if cubature is None:
-            x, w = gauss_hermite(num_components, 20)  # Gauss-Hermite sigma points and weights
-        else:
-            x, w = cubature(num_components)
-
-        # subband_mean, modulator_mean = post_mean[:num_components], self.link_fn(post_mean[num_components:])
-        subband_mean, modulator_mean = post_mean[:num_components], post_mean[num_components:]  # TODO: CHECK
-        subband_cov, modulator_cov = post_cov[:num_components, :num_components], post_cov[num_components:,
-                                                                                 num_components:]
-        sigma_points = cholesky(modulator_cov) @ x + modulator_mean
-
-        modulator_var = np.diag(subband_cov)[..., None]
-        mu = (self.link_fn(sigma_points).T @ subband_mean)[:, 0]
-        lognormpdf = -0.5 * np.log(2 * np.pi * self.variance) - 0.5 * (y - mu) ** 2 / self.variance
-        const = -0.5 / self.variance * (self.link_fn(sigma_points).T ** 2 @ modulator_var)[:, 0]
-        exp_log_lik = np.sum(w * (lognormpdf + const))
-
-        dE1 = np.sum(w * self.link_fn(sigma_points) * (y - mu) / self.variance, axis=-1)
-        dE2 = np.sum(w * (sigma_points - modulator_mean) * modulator_var ** -1
-                     * (lognormpdf + const), axis=-1)
-        dE_dm = np.block([dE1, dE2])[..., None]
-
-        d2E1 = np.sum(w * - 0.5 * self.link_fn(sigma_points) ** 2 / self.variance, axis=-1)
-        d2E2 = np.sum(w * 0.5 * (
-                ((sigma_points - modulator_mean) * modulator_var ** -1) ** 2
-                - modulator_var ** -1
-        ) * (lognormpdf + const), axis=-1)
-        dE_dv = np.diag(np.block([d2E1, d2E2]))
-        return exp_log_lik, dE_dm, dE_dv
+        E = self.expected_log_likelihood(y, post_mean, post_cov, cubature)
+        dE_dm = self.expected_log_likelihood_dm(y, post_mean, post_cov, cubature)
+        d2E_dm2 = self.expected_log_likelihood_dm2(y, post_mean, post_cov, cubature)
+        # d2E_dm2 = -ensure_positive_precision(-d2E_dm2)
+        # return E, dE_dm, np.diag(np.diag(d2E_dm2))  # TODO: check this is the same as above
+        return E, dE_dm, d2E_dm2
 
     def analytical_linearisation(self, m, sigma=None):
         """
         Compute the Jacobian of the state space observation model w.r.t. the
         function fₙ and the noise term σₙ.
+        The implicit observation model is:
+            h(fₙ,rₙ) = E[yₙ|fₙ] + √Cov[yₙ|fₙ] σₙ
+        The Jacobians are evaluated at the means, fₙ=m, σₙ=0, to be used during
+        Extended Kalman smoothing.
         """
-        num_components = int(m.shape[0] / 2)
-        Jf = np.block([[self.link_fn(m[num_components:])], [m[:num_components] * self.dlink_fn(m[num_components:])]]).T
-        Jsigma = np.array([[self.variance ** 0.5]])
-        return Jf, Jsigma
+        sigma = np.array([[0.0]]) if sigma is None else sigma
+
+        Jf, Jsigma = jacrev(self.observation_model, argnums=(0, 1))(m, sigma)
+
+        Hf = jacrev(self.jac_obs, argnums=0)(m, sigma)
+        Hsigma = jacrev(self.jac_obs_sigma, argnums=1)(m, sigma)
+
+        return Jf.T, np.swapaxes(Hf, axis1=0, axis2=2), Jsigma[None], Hsigma[None]
+
+
+class NMF(NonnegativeMatrixFactorisation):
+    pass
+
+
+class AudioAmplitudeDemodulation(NonnegativeMatrixFactorisation):
+    """
+    The Audio Amplitude Demodulation likelihood
+    """
+    def __init__(self, num_components, variance=0.1):
+        """
+        param hyp: observation noise
+        """
+        self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
+        super().__init__(num_subbands=num_components,
+                         num_modulators=num_components,
+                         variance=variance)
+        self.name = 'Audio Amplitude Demodulation'
+
+    @property
+    def weights(self):
+        return np.eye(self.num_subbands)

@@ -43,12 +43,19 @@ else:
     plot_final = True
 
 if len(sys.argv) > 3:
-    baseline = int(sys.argv[3])
+    baseline = bool(int(sys.argv[3]))
 else:
-    baseline = 0
+    baseline = True
 
-print('method number', method)
-print('batch number', fold)
+if len(sys.argv) > 4:
+    parallel = bool(int(sys.argv[4]))
+else:
+    parallel = None
+
+print('method number:', method)
+print('batch number:', fold)
+print('baseline:', baseline)
+print('parallel:', parallel)
 
 # Get training and test indices
 test = cvind[fold, :]
@@ -71,52 +78,58 @@ kern2 = newt.kernels.Matern32(variance=var_f2, lengthscale=len_f2)
 kern = newt.kernels.Independent([kern1, kern2])
 lik = newt.likelihoods.HeteroscedasticNoise()
 
+if method == 0:
+    inf = newt.inference.Taylor
+elif method == 1:
+    inf = newt.inference.PosteriorLinearisation
+elif method in [2, 3, 4]:
+    inf = newt.inference.ExpectationPropagation
+elif method == 5:
+    inf = newt.inference.VariationalInference
+
+if baseline:
+    mod = newt.models.MarkovGP
+    Mod = newt.build_model(mod, inf)
+    model = Mod(kernel=kern, likelihood=lik, X=X, Y=Y, parallel=parallel)
+else:
+    mod = newt.models.SparseMarkovGP
+    Mod = newt.build_model(mod, inf)
+    model = Mod(kernel=kern, likelihood=lik, X=X, Y=Y, Z=Z, parallel=parallel)
+
+if method == 2:
+    inf_args = {"power": 1.}
+elif method == 3:
+    inf_args = {"power": 0.5}
+elif method == 4:
+    inf_args = {"power": 0.01}
+else:
+    inf_args = {}
+
+
 lr_adam = 0.025
 # lr_adam = 0.01
 lr_newton = .05
 # lr_newton = 0.01
 iters = 500
-
-if method == 0:
-    inf = newt.inference.Taylor()
-elif method == 1:
-    inf = newt.inference.PosteriorLinearisation(cubature=newt.cubature.Unscented())
-elif method == 2:
-    inf = newt.inference.PosteriorLinearisation()
-elif method == 3:
-    inf = newt.inference.ExpectationPropagation(power=1)
-elif method == 4:
-    inf = newt.inference.ExpectationPropagation(power=0.5)
-elif method == 5:
-    inf = newt.inference.ExpectationPropagation(power=0.01)
-elif method == 6:
-    inf = newt.inference.VariationalInference()
-
-if baseline:
-    model = newt.models.MarkovGP(X=X, Y=Y, kernel=kern, likelihood=lik)
-else:
-    model = newt.models.SparseMarkovGP(X=X, Y=Y, Z=Z, kernel=kern, likelihood=lik)
-
-trainable_vars = model.vars() + inf.vars()
-energy = objax.GradValues(inf.energy, trainable_vars)
-
-opt = objax.optimizer.Adam(trainable_vars)
+opt_hypers = objax.optimizer.Adam(model.vars())
+energy = objax.GradValues(model.energy, model.vars())
 
 
+@objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    inf(model, lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy(model)  # compute energy and its gradients w.r.t. hypers
-    return dE, E
+    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
+    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    opt_hypers(lr_adam, dE)
+    return E
 
 
-train_op = objax.Jit(train_op, trainable_vars)
+train_op = objax.Jit(train_op)
 
 
 print('optimising the hyperparameters ...')
 t0 = time.time()
 for i in range(1, iters + 1):
-    grad, loss = train_op()
-    opt(lr_adam, grad)
+    loss = train_op()
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
@@ -130,12 +143,12 @@ t1 = time.time()
 print('prediction time: %2.2f secs' % (t1-t0))
 print('NLPD: %1.2f' % nlpd)
 
-if baseline:
-    with open("output/baseline_" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
-        pickle.dump(nlpd, fp)
-else:
-    with open("output/" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
-        pickle.dump(nlpd, fp)
+# if baseline:
+#     with open("output/baseline_" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
+#         pickle.dump(nlpd, fp)
+# else:
+#     with open("output/" + str(method) + "_" + str(fold) + "_nlpd.txt", "wb") as fp:
+#         pickle.dump(nlpd, fp)
 
 # with open("output/" + str(method) + "_" + str(fold) + "_nlpd.txt", "rb") as fp:
 #     nlpd_show = pickle.load(fp)

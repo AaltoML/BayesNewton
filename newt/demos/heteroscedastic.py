@@ -50,36 +50,34 @@ kern1 = newt.kernels.Matern32(variance=var_f1, lengthscale=len_f1)
 kern2 = newt.kernels.Matern32(variance=var_f2, lengthscale=len_f2)
 kern = newt.kernels.Independent([kern1, kern2])
 lik = newt.likelihoods.HeteroscedasticNoise()
-# model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=X, Y=Y)
-model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=X, Y=Y, Z=Z)
 
-# inf = newt.inference.VariationalInference()
-inf = newt.inference.ExpectationPropagation()
-# inf = newt.inference.Laplace()
-# inf = newt.inference.PosteriorLinearisation()
-# inf = newt.inference.Taylor()
-
-trainable_vars = model.vars() + inf.vars()
-energy = objax.GradValues(inf.energy, trainable_vars)
+# model = newt.models.VariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+model = newt.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+# model = newt.models.SparseExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, Y=Y, Z=Z)
 
 lr_adam = 0.01
-lr_newton = 0.01
+lr_newton = 0.05
 iters = 200
-opt = objax.optimizer.Adam(trainable_vars)
+opt_hypers = objax.optimizer.Adam(model.vars())
+energy = objax.GradValues(model.energy, model.vars())
+inf_args = {
+    "power": 0.5,  # the EP power
+}
 
 
+@objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    inf(model, lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy(model)  # compute energy and its gradients w.r.t. hypers
-    return dE, E
+    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
+    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    opt_hypers(lr_adam, dE)
+    return E
 
 
-train_op = objax.Jit(train_op, trainable_vars)
+train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    grad, loss = train_op()
-    opt(lr_adam, grad)
+    loss = train_op()
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
@@ -114,7 +112,7 @@ if hasattr(model, 'Z'):
              'c^',
              markersize=4)
 plt.legend()
-plt.title('Heteroscedastic Noise Model via Kalman smoothing (motorcycle crash data)')
+plt.title('Heteroscedastic Noise Model (motorcycle crash data)')
 plt.xlabel('time (milliseconds)')
 plt.ylabel('accelerometer reading')
 plt.show()

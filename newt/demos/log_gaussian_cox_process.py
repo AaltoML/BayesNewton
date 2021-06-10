@@ -29,34 +29,37 @@ len_f = 4.  # GP lengthscale
 
 kern = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = newt.likelihoods.Poisson(binsize=binsize)
-# model = newt.models.GP(kernel=kern, likelihood=lik, X=x, Y=y)
-model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
-# inf = newt.inference.VariationalInference()
-inf = newt.inference.ExpectationPropagation(power=0.01)
-
-trainable_vars = model.vars() + inf.vars()
-energy = objax.GradValues(inf.energy, trainable_vars)
+# model = newt.models.VariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+# model = newt.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+model = newt.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.MarkovTaylorGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
 
 lr_adam = 0.1
 lr_newton = 1
 iters = 100
-opt = objax.optimizer.Adam(trainable_vars)
+opt_hypers = objax.optimizer.Adam(model.vars())
+energy = objax.GradValues(model.energy, model.vars())
+inf_args = {
+    "power": 0.01,  # the EP power
+}
 
 
+@objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    inf(model, lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy(model)  # compute energy and its gradients w.r.t. hypers
-    return dE, E
+    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
+    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    opt_hypers(lr_adam, dE)
+    return E
 
 
-train_op = objax.Jit(train_op, trainable_vars)
+train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    grad, loss = train_op()
-    opt(lr_adam, grad)
+    loss = train_op()
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
@@ -75,8 +78,8 @@ post_mean_lgcp = link_fn(posterior_mean + posterior_var / 2)
 lb_lgcp = link_fn(posterior_mean - np.sqrt(posterior_var) * 1.645)
 ub_lgcp = link_fn(posterior_mean + np.sqrt(posterior_var) * 1.645)
 
-# lb_y = posterior_mean_y - 1.96 * np.sqrt(posterior_var_y)
-# ub_y = posterior_mean_y + 1.96 * np.sqrt(posterior_var_y)
+# lb_y = posterior_mean_y - np.sqrt(posterior_var_y)
+# ub_y = posterior_mean_y + np.sqrt(posterior_var_y)
 
 print('plotting ...')
 plt.figure(1, figsize=(12, 5))
@@ -85,7 +88,7 @@ plt.plot(disaster_timings, 0*disaster_timings, 'k+', label='observations', clip_
 plt.plot(x_plot, post_mean_lgcp, 'g', label='posterior mean')
 # plt.plot(x_plot, posterior_mean_y, 'r', label='posterior mean (y)')
 plt.fill_between(x_plot, lb_lgcp, ub_lgcp, color='g', alpha=0.05, label='95% confidence')
-# plt.fill_between(x_plot, lb_y, ub_y, color='r', alpha=0.05, label='95% confidence (y)')
+# plt.fill_between(x_plot, lb_y, ub_y, color='r', alpha=0.05, label='1 std (y)')
 plt.xlim(x_plot[0], x_plot[-1])
 plt.ylim(0.0)
 plt.legend()

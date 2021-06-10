@@ -1,12 +1,8 @@
 import jax.numpy as np
 import numpy as nnp
-import objax
 from jax import vmap
 from jax.ops import index_add, index
-from jax.scipy.linalg import cho_factor, cho_solve, block_diag
-from typing import Optional, Callable, Tuple, Union
-from objax.module import Module
-from objax.variable import BaseState, TrainVar, VarCollection
+from jax.scipy.linalg import cho_factor, cho_solve
 import math
 
 LOG2PI = math.log(2 * math.pi)
@@ -29,11 +25,24 @@ def inv(P):
     return cho_solve(L, np.eye(P.shape[-1]))
 
 
+def inv_vmap(P):
+    """
+    Compute the inverse of a PSD matrix using the Cholesky factorisation
+    """
+    L = cho_factor(P)
+    return cho_solve(L, np.tile(np.eye(P.shape[-1]), [P.shape[0], 1, 1]))
+
+
 def diag(P):
     """
     a broadcastable version of np.diag, for when P is size [N, D, D]
     """
-    return vmap(np.diag)(P)
+    return np.diagonal(P, axis1=1, axis2=2)
+
+
+@vmap
+def vmap_diag(P):
+    return np.diag(P)
 
 
 def transpose(P):
@@ -41,12 +50,16 @@ def transpose(P):
 
 
 def softplus(x_):
-    # return np.log(1 + np.exp(x_))
-    return np.log(1 + np.exp(-np.abs(x_))) + np.maximum(x_, 0)  # safer version
+    return np.log(1. + np.exp(x_))
+    # return np.log(1. + np.exp(-np.abs(x_))) + np.maximum(x_, 1e-24)  # safer version (but derivatve can have issues)
 
 
 def sigmoid(x_):
     return np.exp(x_) / (np.exp(x_) + 1.)
+
+
+def sigmoid_diff(x_):
+    return sigmoid(x_) * (1. - sigmoid(x_))
 
 
 def softplus_inv(x_):
@@ -56,8 +69,8 @@ def softplus_inv(x_):
     if x_ is None:
         return x_
     else:
-        # return np.log(np.exp(x_) - 1)
-        return np.log(1 - np.exp(-np.abs(x_))) + np.maximum(x_, 0)  # safer version
+        return np.log(np.exp(x_) - 1)
+        # return np.log(1. - np.exp(-np.abs(x_))) + np.maximum(x_, 1e-24)  # safer version
 
 
 def ensure_positive_precision(K):
@@ -65,7 +78,8 @@ def ensure_positive_precision(K):
     Check whether matrix K has positive diagonal elements.
     If not, then replace the negative elements with default value 0.01
     """
-    K_diag = diag(diag(K))
+    # K_diag = diag(diag(K))
+    K_diag = vmap_diag(diag(K))
     K = np.where(np.any(diag(K) < 0), np.where(K_diag < 0, 1e-2, K_diag), K)
     return K
 
@@ -74,7 +88,8 @@ def ensure_diagonal_positive_precision(K):
     """
     Return a diagonal matrix with all positive values.
     """
-    K_diag = diag(diag(K))
+    # K_diag = diag(K)[..., None] * np.eye(K.shape[1])
+    K_diag = vmap_diag(diag(K))
     K = np.where(K_diag < 0, 1e-2, K_diag)
     return K
 
@@ -414,6 +429,7 @@ def mvn_logpdf_and_derivs(x, mean, cov, mask=None):
     return np.squeeze(-0.5 * (distance + n * LOG2PI + log_det)), scaled_diff, -precision
 
 
+@vmap
 def _gaussian_expected_log_lik(y, post_mean, post_cov, var):
     post_mean = post_mean.reshape(-1, 1)
     post_cov = post_cov.reshape(-1, 1)
@@ -448,7 +464,8 @@ def gaussian_expected_log_lik_diag(y, post_mean, post_cov, var):
     """
     post_cov = diag(post_cov)
     var = diag(var)
-    var_exp = vmap(_gaussian_expected_log_lik)(y, post_mean, post_cov, var)
+    # var_exp = vmap(_gaussian_expected_log_lik)(y, post_mean, post_cov, var)
+    var_exp = _gaussian_expected_log_lik(y, post_mean, post_cov, var)
     # return np.sum(var_exp)
     return var_exp
 
@@ -574,42 +591,3 @@ def rotation_matrix(dt, omega):
         [np.sin(omega * dt),  np.cos(omega * dt)]
     ])
     return R
-
-
-def get_meanfield_block_index(kernel):
-    Pinf = kernel.stationary_covariance_meanfield()
-    num_latents = Pinf.shape[0]
-    sub_state_dim = Pinf.shape[1]
-    state = np.ones([sub_state_dim, sub_state_dim])
-    for i in range(1, num_latents):
-        state = block_diag(state, np.ones([sub_state_dim, sub_state_dim]))
-    block_index = np.where(np.array(state, dtype=bool))
-    return block_index
-
-
-class GradValuesAux(objax.GradValues):
-    """
-    an exact copy of objax.GradValues, but with the output converted to an array and multiplied by a scale which
-    accounts for the effect of batching
-    """
-    def __init__(self, f: Union[Module, Callable],
-                 variables: Optional[VarCollection],
-                 input_argnums: Optional[Tuple[int, ...]] = None,
-                 scale: Optional[float] = 1.):
-        self.scale = scale
-        super().__init__(f=f,
-                         variables=variables,
-                         input_argnums=input_argnums)
-
-    def __call__(self, *args, **kwargs):
-        """Returns the computed gradients for the first value returned by `f` and the values returned by `f`.
-
-                Returns:
-                    A tuple (gradients , values of f]), where gradients is a list containing
-                        the input gradients, if any, followed by the variable gradients."""
-        inputs = [args[i] for i in self.input_argnums]
-        g, (outputs, changes) = self._call(inputs + self.vc.subset(TrainVar).tensors(),
-                                           self.vc.subset(BaseState).tensors(),
-                                           list(args), kwargs)
-        self.vc.assign(changes)
-        return g, self.scale * np.asarray(outputs[0]), outputs[1:][0]

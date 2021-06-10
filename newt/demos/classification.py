@@ -8,7 +8,6 @@ np.random.seed(99)
 N = 500  # number of training points
 M = 20
 x = 100 * np.random.rand(N)
-x = np.linspace(np.min(x), np.max(x), N)
 f = lambda x_: 6 * np.sin(np.pi * x_ / 10.0) / (np.pi * x_ / 10.0 + 1)
 y_ = f(x) + np.math.sqrt(0.05)*np.random.randn(x.shape[0])
 y = np.sign(y_)
@@ -27,36 +26,35 @@ len_f = 5.0  # GP lengthscale
 
 kern = newt.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = newt.likelihoods.Bernoulli(link='logit')
-# model = newt.models.GP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = newt.models.MarkovGP(kernel=kern, likelihood=lik, X=x, Y=y)
-model = newt.models.SparseMarkovGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
-# inf = newt.inference.VariationalInference()
-inf = newt.inference.ExpectationPropagation(power=0.5)
-# inf = newt.inference.PosteriorLinearisation()
-# inf = newt.inference.Laplace()
-
-trainable_vars = model.vars() + inf.vars()
-energy = objax.GradValues(inf.energy, trainable_vars)
+# model = newt.models.VariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+model = newt.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = newt.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+# model = newt.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y)
 
 lr_adam = 0.1
 lr_newton = 1
 iters = 20
-opt = objax.optimizer.Adam(trainable_vars)
+opt_hypers = objax.optimizer.Adam(model.vars())
+energy = objax.GradValues(model.energy, model.vars())
+inf_args = {
+    "power": 0.5,  # the EP power
+}
 
 
+@objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    inf(model, lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy(model)  # compute energy and its gradients w.r.t. hypers
-    return dE, E
+    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
+    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    opt_hypers(lr_adam, dE)
+    return E
 
 
-train_op = objax.Jit(train_op, trainable_vars)
+train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    grad, loss = train_op()
-    opt(lr_adam, grad)
+    loss = train_op()
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))
