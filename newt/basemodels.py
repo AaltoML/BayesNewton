@@ -8,6 +8,7 @@ from jax.scipy.linalg import cho_factor, cho_solve
 from jax.lib import xla_bridge
 from .utils import (
     inv,
+    inv_vmap,
     diag,
     solve,
     transpose,
