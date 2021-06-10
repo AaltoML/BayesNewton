@@ -31,7 +31,7 @@ if len(sys.argv) > 1:
     # plot_final = False
     # save_result = True
 else:
-    method = 8
+    method = 3
     # plot_final = True
     # save_result = False
 
