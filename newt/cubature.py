@@ -1,8 +1,8 @@
 import objax
-from jax import vmap
+from jax import vmap, grad, jacrev
 import jax.numpy as np
 from jax.scipy.linalg import cholesky, cho_factor
-from .utils import solve, gaussian_first_derivative_wrt_mean, gaussian_second_derivative_wrt_mean
+from .utils import inv, solve, gaussian_first_derivative_wrt_mean, gaussian_second_derivative_wrt_mean
 from numpy.polynomial.hermite import hermgauss
 import numpy as onp
 import itertools
@@ -336,6 +336,57 @@ def moment_match_cubature(likelihood, y, cav_mean, cav_cov, power=1.0, cubature=
     return lZ, dlZ, d2lZ
 
 
+# def statistical_linear_regression_cubature(likelihood, mean, cov, cubature=None):
+#     """
+#     Perform statistical linear regression (SLR) using cubature.
+#     We aim to find a likelihood approximation p(yₙ|fₙ) ≈ 𝓝(yₙ|Afₙ+b,Ω).
+#     TODO: this currently assumes an additive noise model (ok for our current applications), make more general
+#     """
+#     if cubature is None:
+#         x, w = gauss_hermite(mean.shape[0], 20)  # Gauss-Hermite sigma points and weights
+#     else:
+#         x, w = cubature(mean.shape[0])
+#     # fsigᵢ=xᵢ√(vₙ) + mₙ: scale locations according to cavity dist.
+#     sigma_points = cholesky(cov) @ np.atleast_2d(x) + mean
+#     lik_expectation, lik_covariance = likelihood.conditional_moments(sigma_points)
+#     # Compute muₙ via cubature:
+#     # muₙ = ∫ E[yₙ|fₙ] 𝓝(fₙ|mₙ,vₙ) dfₙ
+#     #    ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ]
+#     mu = np.sum(
+#         w * lik_expectation, axis=-1
+#     )[:, None]
+#     # Compute variance S via cubature:
+#     # S = ∫ [(E[yₙ|fₙ]-muₙ) (E[yₙ|fₙ]-muₙ)' + Cov[yₙ|fₙ]] 𝓝(fₙ|mₙ,vₙ) dfₙ
+#     #   ≈ ∑ᵢ wᵢ [(E[yₙ|fsigᵢ]-muₙ) (E[yₙ|fsigᵢ]-muₙ)' + Cov[yₙ|fₙ]]
+#     # TODO: allow for multi-dim cubature
+#     S = np.sum(
+#         w * ((lik_expectation - mu) * (lik_expectation - mu) + lik_covariance), axis=-1
+#     )[:, None]
+#     # Compute cross covariance C via cubature:
+#     # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-muₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
+#     #   ≈ ∑ᵢ wᵢ (fsigᵢ -mₙ) (E[yₙ|fsigᵢ]-muₙ)'
+#     C = np.sum(
+#         w * (sigma_points - mean) * (lik_expectation - mu), axis=-1
+#     )[:, None]
+#     # compute equivalent likelihood noise, omega
+#     omega = S - C.T @ solve(cov, C)
+#     # Compute derivative of z via cubature:
+#     # d_mu = ∫ E[yₙ|fₙ] vₙ⁻¹ (fₙ-mₙ) 𝓝(fₙ|mₙ,vₙ) dfₙ
+#     #      ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ] vₙ⁻¹ (fsigᵢ-mₙ)
+#     prec = inv(cov)
+#     d_mu = np.sum(
+#         # w * lik_expectation * (solve(cov, sigma_points - mean)), axis=-1
+#         w * lik_expectation * (prec @ (sigma_points - mean)), axis=-1
+#     )[None, :]
+#     # Second derivative:
+#     # d2_mu = -∫ E[yₙ|fₙ] vₙ⁻¹ 𝓝(fₙ|mₙ,vₙ) dfₙ + ∫ E[yₙ|fₙ] (vₙ⁻¹ (fₙ-mₙ))² 𝓝(fₙ|mₙ,vₙ) dfₙ
+#     #       ≈ ∑ᵢ wᵢ E[yₙ|fsigᵢ] ((vₙ⁻¹ (fsigᵢ-mₙ))² - vₙ⁻¹)
+#     d2_mu = np.sum(
+#         w * lik_expectation * (prec @ (sigma_points - mean) ** 2 - prec), axis=-1
+#     )[None, :]
+#     return mu, omega, d_mu, d2_mu
+
+
 def statistical_linear_regression_cubature(likelihood, mean, cov, cubature=None):
     """
     Perform statistical linear regression (SLR) using cubature.
@@ -345,8 +396,8 @@ def statistical_linear_regression_cubature(likelihood, mean, cov, cubature=None)
     mu, omega = expected_conditional_mean(likelihood, mean, cov, cubature)
     dmu_dm = expected_conditional_mean_dm(likelihood, mean, cov, cubature)
     d2mu_dm2 = expected_conditional_mean_dm2(likelihood, mean, cov, cubature)
-    # return mu.reshape(-1, 1), omega, dmu_dm[None], d2mu_dm2[None]
-    return mu.reshape(-1, 1), omega, dmu_dm[None], np.swapaxes(d2mu_dm2, axis1=0, axis2=2)
+    return mu.reshape(-1, 1), omega, dmu_dm.reshape(1, -1), d2mu_dm2
+    # return mu.reshape(-1, 1), omega, dmu_dm[None], np.swapaxes(d2mu_dm2, axis1=0, axis2=2)
 
 
 def expected_conditional_mean(likelihood, mean, cov, cubature=None):
@@ -367,7 +418,8 @@ def expected_conditional_mean(likelihood, mean, cov, cubature=None):
         w * lik_expectation, axis=-1
     )[:, None]
     S = np.sum(
-        w * ((lik_expectation - mu) @ (lik_expectation - mu).T + lik_covariance), axis=-1
+        # w * ((lik_expectation - mu) @ (lik_expectation - mu).T + lik_covariance), axis=-1  # TODO: CHECK MULTI-DIM
+        w * ((lik_expectation - mu) ** 2 + lik_covariance), axis=-1
     )[:, None]
     # Compute cross covariance C via cubature:
     # C = ∫ (fₙ-mₙ) (E[yₙ|fₙ]-muₙ)' 𝓝(fₙ|mₙ,vₙ) dfₙ
