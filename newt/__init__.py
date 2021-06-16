@@ -6,7 +6,6 @@ from .models import *
 from .basemodels import *
 from .inference import *
 from .cubature import *
-from .colormaps import batlow, berlin, vik
 
 
 def build_model(model, inf, name='GPModel'):
