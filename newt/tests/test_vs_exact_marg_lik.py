@@ -40,7 +40,7 @@ def initialise_gp_model(var_f, len_f, var_y, x, y):
 @pytest.mark.parametrize('N', [30, 60])
 def test_marg_lik(var_f, len_f, var_y, N):
     """
-    test whether VI with newt's GP and MarkovGP give the same initial ELBO and posterior
+    test whether VI with newt's GP and Gaussian likelihood gives the exact marginal likelihood
     """
 
     x, y = build_data(N)
