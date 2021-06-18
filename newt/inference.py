@@ -276,7 +276,7 @@ class ExpectationPropagation(InferenceMixin):
         """
         if batch_ind is None:
             batch_ind = np.arange(self.num_data)
-            scale = 1
+            scale = 1.
         else:
             scale = self.num_data / batch_ind.shape[0]
 
@@ -318,7 +318,7 @@ class ExpectationPropagation(InferenceMixin):
 
         ep_energy = -(
             lZ_post
-            + 1 / power * (scale * np.nansum(lZ) - np.nansum(lZ_pseudo))
+            + 1. / power * (scale * np.nansum(lZ) - np.nansum(lZ_pseudo))
         )
 
         return ep_energy
