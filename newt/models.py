@@ -99,6 +99,7 @@ class ExpectationPropagationGP(ExpectationPropagation, GP):
     :param likelihood: a likelihood object
     :param X: inputs
     :param Y: observations
+    [1] Minka: Expectation Propagation for Approximate Bayesian Inference, Ph. D thesis 2000
     """
     def __init__(self, kernel, likelihood, X, Y):
         super().__init__(kernel, likelihood, X, Y)
@@ -113,8 +114,8 @@ class SparseExpectationPropagationGP(ExpectationPropagation, SparseGP):
     :param Y: observations
     :param Z: inducing inputs
     :param opt_z: boolean determining whether to optimise the inducing input locations
-
-    [1] Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using
+    [1] Csato, Opper: Sparse on-line Gaussian processes, Neural Computation 2002
+    [2] Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using
                           Power Expectation Propagation, JMLR 2017
     """
     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
@@ -159,52 +160,87 @@ class SparseMarkovExpectationPropagationGP(ExpectationPropagation, SparseMarkovG
 # ##### Laplace #####
 
 class LaplaceGP(Laplace, GP):
-    pass
+    """
+    [1] Rasmussen, Williams: Gaussian Processes for Machine Learning, 2006
+    """
+    def __init__(self, kernel, likelihood, X, Y):
+        super().__init__(kernel, likelihood, X, Y)
 
 
 class SparseLaplaceGP(Laplace, SparseGP):
-    pass
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
 
 
 class MarkovLaplaceGP(Laplace, MarkovGP):
-    pass
+    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None):
+        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel)
 
 
 class SparseMarkovLaplaceGP(Laplace, SparseMarkovGP):
-    pass
+    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None, Z=None):
+        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel, Z=Z)
 
 
 # ##### Posterior Linearisation #####
 
 class PosteriorLinearisationGP(PosteriorLinearisation, GP):
-    pass
+    """
+    [1] Garcia-Fernandez, Tronarp, Sarkka: Gaussian Process Classification
+                                           Using Posterior Linearization, IEEE Signal Processing 2019
+    """
+
+    def __init__(self, kernel, likelihood, X, Y):
+        super().__init__(kernel, likelihood, X, Y)
 
 
 class SparsePosteriorLinearisationGP(PosteriorLinearisation, SparseGP):
-    pass
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
 
 
 class MarkovPosteriorLinearisationGP(PosteriorLinearisation, MarkovGP):
-    pass
+    """
+    [1] Garcia-Fernandez, Svensson, Sarkka: Iterated Posterior Linearization Smoother, IEEE Automatic Control 2016
+    [2] Wilkinson, Chang, Riis Andersen, Solin: State Space Expectation Propagation, ICML 2020
+    """
+
+    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None):
+        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel)
 
 
 class SparseMarkovPosteriorLinearisationGP(PosteriorLinearisation, SparseMarkovGP):
-    pass
+    """
+    [1] Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021
+    """
+
+    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None, Z=None):
+        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel, Z=Z)
 
 
 # ##### Taylor #####
 
 class TaylorGP(Taylor, GP):
-    pass
+    """
+    [1] Steinberg, Bonilla: Extended and Unscented Gaussian Processes, NeurIPS 2014
+    """
+    def __init__(self, kernel, likelihood, X, Y):
+        super().__init__(kernel, likelihood, X, Y)
 
 
 class SparseTaylorGP(Taylor, SparseGP):
-    pass
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
 
 
 class MarkovTaylorGP(Taylor, MarkovGP):
-    pass
+    """
+    [1] Bell: The Iterated Kalman Smoother as a Gauss-Newton method, SIAM Journal on Optimization 1994
+    """
+    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None):
+        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel)
 
 
 class SparseMarkovTaylorGP(Taylor, SparseMarkovGP):
-    pass
+    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None, Z=None):
+        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel, Z=Z)
