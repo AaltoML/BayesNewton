@@ -16,7 +16,7 @@
 
 Newt is a Gaussian process (GP) library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)). 
 
-Newt provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented see the [models](https://github.com/AaltoML/Newt/blob/main/newt/models.py) file or the list at the bottom of this page.
+Newt provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
 ## Installation
 In the top directory (Newt), run
@@ -82,7 +82,7 @@ This software is provided under the Apache License 2.0. See the accompanying LIC
  - **Sparse Markov Variational GP** *(Adam, Eleftheriadis, Durrande, Artemev, Hensman: Doubly Sparse Variational Gaussian Processes, AISTATS 2020; Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
 ### Expectation Propagation GPs
  - **Expectation Propagation GP** *(Minka: Expectation Propagation for Approximate Bayesian Inference, Ph. D thesis 2000)*
- - **Sparse Expectation Propagation GP** energy not working *(Csato, Opper: Sparse on-line Gaussian processes, Neural Computation 2002; Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using Power Expectation Propagation, JMLR 2017)*
+ - **Sparse Expectation Propagation GP (energy not working)** *(Csato, Opper: Sparse on-line Gaussian processes, Neural Computation 2002; Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using Power Expectation Propagation, JMLR 2017)*
  - **Markov Expectation Propagation GP** *(Wilkinson, Chang, Riis Andersen, Solin: State Space Expectation Propagation, ICML 2020)*
  - **Sparse Markov Expectation Propagation GP** *(Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
 ### Laplace GPs
