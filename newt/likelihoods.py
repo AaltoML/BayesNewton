@@ -225,11 +225,15 @@ class Gaussian(Likelihood):
         p(yₙ|fₙ) = 𝓝(yₙ|fₙ,σ²)
     """
     def __init__(self,
-                 variance=0.1):
+                 variance=0.1,
+                 fix_variance=False):
         """
         :param variance: The observation noise variance, σ²
         """
-        self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
+        if fix_variance:
+            self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
+        else:
+            self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
         super().__init__()
         self.name = 'Gaussian'
         self.link_fn = lambda f: f
