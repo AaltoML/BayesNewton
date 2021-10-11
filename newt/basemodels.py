@@ -348,9 +348,9 @@ class SparseGP(GP):
         if Z.ndim < 2:
             Z = Z[:, None]
         if opt_z:
-            self.Z = objax.TrainVar(Z)
+            self.Z = objax.TrainVar(np.array(Z))
         else:
-            self.Z = objax.StateVar(Z)
+            self.Z = objax.StateVar(np.array(Z))
         self.num_inducing = Z.shape[0]
         self.posterior_mean = objax.StateVar(np.zeros([self.num_inducing, self.func_dim, 1]))
         self.posterior_variance = objax.StateVar(np.tile(np.eye(self.func_dim), [self.num_inducing, 1, 1]))
