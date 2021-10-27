@@ -366,9 +366,9 @@ class SpatioTemporalKernel(Kernel):
         assert spatial_dims == z.ndim - 1
         self.M = z.shape[0]
         if opt_z:
-            self.z = objax.TrainVar(z)  # .reshape(-1, 1)
+            self.z = objax.TrainVar(np.array(z))  # .reshape(-1, 1)
         else:
-            self.z = objax.StateVar(z)
+            self.z = objax.StateVar(np.array(z))
         if conditional in ['DTC', 'dtc']:
             self.conditional_covariance = self.deterministic_training_conditional
         elif conditional in ['FIC', 'FITC', 'fic', 'fitc']:
