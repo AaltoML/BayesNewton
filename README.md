@@ -50,38 +50,64 @@ This software is provided under the Apache License 2.0. See the accompanying LIC
 ## Citing Bayes-Newton
 
 ```
-@software{bayesnewton2021github,
-  author = {William J. Wilkinson},
-  title = {{Bayes-Newton}},
-  url = {https://github.com/AaltoML/BayesNewton},
-  version = {0.0},
-  year = {2021},
+@article{wilkinson2021bayesnewton,
+  title = {{B}ayes-{N}ewton Methods for Approximate {B}ayesian Inference with {PSD} Guarantees},
+  author = {Wilkinson, William J. and S\"arkk\"a, Simo and Solin, Arno},
+  journal={arXiv preprint},
+  year={2021}
 }
 ```
 
 ## Implemented Models
+For a full list of the all the models available see the [model class list](https://github.com/AaltoML/BayesNewton/blob/main/bayesnewton/models.py).
 
 ### Variational GPs
  - **Variationl GP** *(Opper, Archambeau: The Variational Gaussian Approximation Revisited, Neural Computation 2009; Khan, Lin: Conugate-Computation Variational Inference - Converting Inference in Non-Conjugate Models in to Inference in Conjugate Models, AISTATS 2017)*
- - **Sparse Variational GP** *(Hensman, Matthews, Ghahramani: Scalable Variational Gaussian Process Classification, AISTATS 2015)*
+ - **Sparse Variational GP** *(Hensman, Matthews, Ghahramani: Scalable Variational Gaussian Process Classification, AISTATS 2015; Adam, Chang, Khan, Solin: Dual Parameterization of Sparse Variational Gaussian Processes, NeurIPS 2021)*
  - **Markov Variational GP** *(Chang, Wilkinson, Khan, Solin: Fast Variational Learning in State Space Gaussian Process Models, MLSP 2020)*
  - **Sparse Markov Variational GP** *(Adam, Eleftheriadis, Durrande, Artemev, Hensman: Doubly Sparse Variational Gaussian Processes, AISTATS 2020; Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
+ - **Spatio-Temporal Variational GP** *(Hamelijnck, Wilkinson, Loppi, Solin, Damoulas: Spatio-Temporal Variational Gaussian Processes, NeurIPS 2021)*
 ### Expectation Propagation GPs
  - **Expectation Propagation GP** *(Minka: A Family of Algorithms for Approximate Bayesian Inference, Ph. D thesis 2000)*
  - **Sparse Expectation Propagation GP (energy not working)** *(Csato, Opper: Sparse on-line Gaussian processes, Neural Computation 2002; Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using Power Expectation Propagation, JMLR 2017)*
  - **Markov Expectation Propagation GP** *(Wilkinson, Chang, Riis Andersen, Solin: State Space Expectation Propagation, ICML 2020)*
  - **Sparse Markov Expectation Propagation GP** *(Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
-### Laplace GPs
+### Laplace/Newton GPs
  - **Laplace GP** *(Rasmussen, Williams: Gaussian Processes for Machine Learning, 2006)*
- - **Sparse Laplace GP**
- - **Markov Laplace GP**
+ - **Sparse Laplace GP** *(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
+ - **Markov Laplace GP** *(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
  - **Sparse Markov Laplace GP**
 ### Linearisation GPs
- - **Posterior Linearisation GP** *(Garcia-Fernandez, Tronarp, Sarkka: Gaussian Process Classification Using Posterior Linearization, IEEE Signal Processing 2019; Steinberg, Bonilla: Extended and Unscented Gaussian Processes, NeurIPS 2014)*
+ - **Posterior Linearisation GP** *(García-Fernández, Tronarp, Sarkka: Gaussian Process Classification Using Posterior Linearization, IEEE Signal Processing 2019; Steinberg, Bonilla: Extended and Unscented Gaussian Processes, NeurIPS 2014)*
  - **Sparse Posterior Linearisation GP**
- - **Markov Posterior Linearisation GP** *(Garcia-Fernandez, Svensson, Sarkka: Iterated Posterior Linearization Smoother, IEEE Automatic Control 2016; Wilkinson, Chang, Riis Andersen, Solin: State Space Expectation Propagation, ICML 2020)*
+ - **Markov Posterior Linearisation GP** *(García-Fernández, Svensson, Sarkka: Iterated Posterior Linearization Smoother, IEEE Automatic Control 2016; Wilkinson, Chang, Riis Andersen, Solin: State Space Expectation Propagation, ICML 2020)*
  - **Sparse Markov Posterior Linearisation GP** *(Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
  - **Taylor Expansion / Analytical Linearisaiton GP** *(Steinberg, Bonilla: Extended and Unscented Gaussian Processes, NeurIPS 2014)*
  - **Markov Taylor GP / Extended Kalman Smoother** *(Bell: The Iterated Kalman Smoother as a Gauss-Newton method, SIAM Journal on Optimization 1994)*
  - **Sparse Taylor GP**
  - **Sparse Markov Taylor GP / Sparse Extended Kalman Smoother** *(Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
+
+## Gauss-Newton GPs
+*(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
+ - **Gauss-Newton** 
+ - **Variational Gauss-Newton**
+ - **PEP Gauss-Newton**
+ - **2nd-order PL Gauss-Newton**
+
+## Quasi-Newton GPs
+*(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
+ - **Quasi-Newton** 
+ - **Variational Quasi-Newton**
+ - **PEP Quasi-Newton**
+ - **PL Quasi-Newton**
+
+## GPs with PSD Constraints via Riemannian Gradients
+ - **VI Riemann Grad** *Lin, Schmidt, Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020*
+ - **Newton/Laplace Riemann Grad** *Lin, Schmidt, Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020*
+ - **PEP Riemann Grad** *(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
+
+## Others
+
+ - **Infinite Horizon GP** *(Solin, Hensman, Turner: Infinite-Horizon Gaussian Processes, NeurIPS 2018)*
+ - **Parallel Markov GP (with VI, EP, PL, ...)** *(Särkkä, García-Fernández: Temporal parallelization of Bayesian smoothers; Corenflos, Zhao, Särkkä: Gaussian Process Regression in Logarithmic Time; Hamelijnck, Wilkinson, Loppi, Solin, Damoulas: Spatio-Temporal Variational Gaussian Processes, NeurIPS 2021)*
+ - **2nd-order Posterior Linearisation GP (sparse, Markov, ...)** *(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
