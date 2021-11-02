@@ -5,9 +5,8 @@ Bayes-Newton is a Gaussian process (GP) library built in [JAX](https://github.co
 Bayes-Newton provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
 ## Installation
-In the top directory (BayesNewton), run
 ```bash
-pip install -e .
+pip install bayesnewton
 ```
 
 ## Example
