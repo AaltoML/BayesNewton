@@ -54,6 +54,9 @@ Icon?
 ehthumbs.db
 Thumbs.db
 
+setup.cfg
+dist/
+
 # Exclude externalisation results from tikz
 tikz*.pdf
 *.md5

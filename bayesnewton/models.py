@@ -58,7 +58,7 @@ class VariationalGP(VariationalInference, GaussianProcess):
 
 class SparseVariationalGP(VariationalInference, SparseGaussianProcess):
     """
-    Sparse variational Gaussian process (SVGP) [1], adapted to use conjugate computation VI [2]
+    Sparse variational Gaussian process (SVGP) [1, 2]
     :param kernel: a kernel object
     :param likelihood: a likelihood object
     :param X: inputs
@@ -67,8 +67,7 @@ class SparseVariationalGP(VariationalInference, SparseGaussianProcess):
     :param opt_z: boolean determining whether to optimise the inducing input locations
 
     [1] Hensman, Matthews, Ghahramani: Scalable Variational Gaussian Process Classification, AISTATS 2015
-    [2] Khan, Lin: Conugate-Computation Variational Inference - Converting Inference in Non-Conjugate Models in to
-                   Inference in Conjugate Models, AISTATS 2017
+    [2] Adam, Chang, Khan, Solin: Dual Parameterization of Sparse Variational Gaussian Processes, NeurIPS 2021
     """
     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
         super().__init__(kernel, likelihood, X, Y, Z, opt_z)
