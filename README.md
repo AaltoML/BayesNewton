@@ -1,35 +1,21 @@
-# Newt
+# BayesNewton
 
-                          __ \/_
-                         (' \`\
-                      _\, \ \\/ 
-                       /`\/\ \\
-                            \ \\    
-                             \ \\/\/_
-                             /\ \\'\
-                           __\ `\\\
-                            /|`  `\\
-                                   \\
-                                    \\
-                                     \\    ,
-                                      `---'  
+BayesNewton is a Gaussian process (GP) library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
 
-Newt is a Gaussian process (GP) library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
-
-Newt provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
+BayesNewton provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
 ## Installation
-In the top directory (Newt), run
+In the top directory (BayesNewton), run
 ```bash
 pip install -e .
 ```
 
 ## Example
-Given some inputs `x` and some data `y`, you can construct a Newt model as follows,
+Given some inputs `x` and some data `y`, you can construct a BayesNewton model as follows,
 ```python
-kern = newt.kernels.Matern52()
-lik = newt.likelihoods.Gaussian()
-model = newt.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+kern = bayesnewton.kernels.Matern52()
+lik = bayesnewton.likelihoods.Gaussian()
+model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
 ```
 The training loop (inference and hyperparameter learning) is then set up using objax's built in functionality:
 ```python
@@ -55,19 +41,19 @@ iters = 20
 for i in range(1, iters + 1):
     loss = train_op()
 ```
-Full demos are available [here](https://github.com/AaltoML/Newt/tree/main/newt/demos).
+Full demos are available [here](https://github.com/AaltoML/BayesNewton/tree/main/demos).
 
 ## License
 
 This software is provided under the Apache License 2.0. See the accompanying LICENSE file for details.
 
-## Citing Newt
+## Citing BayesNewton
 
 ```
-@software{newt2021github,
+@software{bayesnewton2021github,
   author = {William J. Wilkinson},
-  title = {{Newt}},
-  url = {https://github.com/AaltoML/Newt},
+  title = {{BayesNewton}},
+  url = {https://github.com/AaltoML/BayesNewton},
   version = {0.0},
   year = {2021},
 }

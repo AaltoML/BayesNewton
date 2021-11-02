@@ -1,0 +1,11 @@
+#!/bin/bash -l
+#SBATCH -p short
+#SBATCH -t 24:00:00
+#SBATCH -n 1
+#SBATCH --mem-per-cpu=4000
+#SBATCH --array=0-4
+#SBATCH -o air_gpflow-%a.out
+module load miniconda
+source activate venv
+
+srun python air_quality_gpflow.py $SLURM_ARRAY_TASK_ID 2
