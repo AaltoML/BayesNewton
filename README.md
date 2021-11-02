@@ -1,8 +1,8 @@
-# BayesNewton
+# Bayes-Newton
 
-BayesNewton is a Gaussian process (GP) library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
+Bayes-Newton is a Gaussian process (GP) library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
 
-BayesNewton provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
+Bayes-Newton provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
 ## Installation
 In the top directory (BayesNewton), run
@@ -11,7 +11,7 @@ pip install -e .
 ```
 
 ## Example
-Given some inputs `x` and some data `y`, you can construct a BayesNewton model as follows,
+Given some inputs `x` and some data `y`, you can construct a Bayes-Newton model as follows,
 ```python
 kern = bayesnewton.kernels.Matern52()
 lik = bayesnewton.likelihoods.Gaussian()
@@ -47,12 +47,12 @@ Full demos are available [here](https://github.com/AaltoML/BayesNewton/tree/main
 
 This software is provided under the Apache License 2.0. See the accompanying LICENSE file for details.
 
-## Citing BayesNewton
+## Citing Bayes-Newton
 
 ```
 @software{bayesnewton2021github,
   author = {William J. Wilkinson},
-  title = {{BayesNewton}},
+  title = {{Bayes-Newton}},
   url = {https://github.com/AaltoML/BayesNewton},
   version = {0.0},
   year = {2021},
