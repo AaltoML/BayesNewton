@@ -52,7 +52,7 @@ This software is provided under the Apache License 2.0. See the accompanying LIC
 @article{wilkinson2021bayesnewton,
   title = {{B}ayes-{N}ewton Methods for Approximate {B}ayesian Inference with {PSD} Guarantees},
   author = {Wilkinson, William J. and S\"arkk\"a, Simo and Solin, Arno},
-  journal={arXiv preprint},
+  journal={arXiv preprint arXiv:2111.01721},
   year={2021}
 }
 ```
