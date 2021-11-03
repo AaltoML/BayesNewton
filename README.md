@@ -1,8 +1,8 @@
 # Bayes-Newton
 
-Bayes-Newton is a Gaussian process (GP) library built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
+Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
 
-Bayes-Newton provides a unifying view of approximate Bayesian inference for GPs, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
+Bayes-Newton provides a unifying view of approximate Bayesian inference, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
 ## Installation
 ```bash
@@ -101,8 +101,8 @@ For a full list of the all the models available see the [model class list](https
  - **PL Quasi-Newton**
 
 ## GPs with PSD Constraints via Riemannian Gradients
- - **VI Riemann Grad** *Lin, Schmidt, Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020*
- - **Newton/Laplace Riemann Grad** *Lin, Schmidt, Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020*
+ - **VI Riemann Grad** *(Lin, Schmidt, Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020)*
+ - **Newton/Laplace Riemann Grad** *(Lin, Schmidt, Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020)*
  - **PEP Riemann Grad** *(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
 
 ## Others
