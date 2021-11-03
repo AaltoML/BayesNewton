@@ -1,6 +1,6 @@
 # Bayes-Newton
 
-Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) built in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
+Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
 
 Bayes-Newton provides a unifying view of approximate Bayesian inference, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
