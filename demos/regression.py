@@ -35,20 +35,10 @@ var_y = 0.2  # observation noise
 
 kern = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = bayesnewton.likelihoods.Gaussian(variance=var_y)
-# lik = bayesnewton.likelihoods.StudentT()
+# lik = bayesnewton.likelihoods.StudentsT()
 # lik = bayesnewton.likelihoods.Beta()
 # lik = bayesnewton.likelihoods.Gamma()
 model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovVariationalGaussNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovVGNGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovExpectationPropagationQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
-# model = bayesnewton.models.MarkovLaplaceGaussNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovExpectationPropagationGaussNewtonsGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
-# model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
-# model = bayesnewton.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.InfiniteHorizonVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 # model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, power=0.5)
@@ -56,9 +46,6 @@ model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x,
 # model = bayesnewton.models.SparseVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 # model = bayesnewton.models.SparseExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, power=0.5)
 # model = bayesnewton.models.ExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
-
-# SMVGP = bayesnewton.build_model(bayesnewton.models.SparseMarkovGP, bayesnewton.inference.VariationalInference)
-# model = SMVGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
 lr_adam = 0.1
 lr_newton = 1
