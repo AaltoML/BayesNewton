@@ -1013,7 +1013,8 @@ class SparseMarkovGaussianProcess(MarkovGaussianProcess):
             test_mean, test_var = H @ state_mean, H @ state_cov @ transpose(H)
 
         if np.squeeze(test_var).ndim > 2:  # deal with spatio-temporal case (discard spatial covariance)
-            test_var = diag(np.squeeze(test_var))
+            if not isinstance(self.likelihood, MultiLatentLikelihood):
+                test_var = diag(np.squeeze(test_var))
         return np.squeeze(test_mean), np.squeeze(test_var)
 
     def conditional_posterior_to_data(self, batch_ind=None, post_mean=None, post_cov=None):
