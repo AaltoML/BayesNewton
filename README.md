@@ -4,7 +4,8 @@ Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) 
 
 Bayes-Newton provides a unifying view of approximate Bayesian inference, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
-The methodology is outlined in the following article, [*Wilkinson, Särkkä, Solin (2021): 'Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees', arXiv preprint arXiv:2111.01721*](https://arxiv.org/abs/2111.01721).
+The methodology is outlined in the following article:
+* W.J. Wilkinson, S. Särkkä, and A. Solin (2021): **Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees**. [*arXiv preprint arXiv:2111.01721*](https://arxiv.org/abs/2111.01721).
 
 ## Installation
 ```bash
@@ -43,10 +44,6 @@ for i in range(1, iters + 1):
     loss = train_op()
 ```
 Full demos are available [here](https://github.com/AaltoML/BayesNewton/tree/main/demos).
-
-## License
-
-This software is provided under the Apache License 2.0. See the accompanying LICENSE file for details.
 
 ## Citing Bayes-Newton
 
@@ -112,3 +109,7 @@ For a full list of the all the models available see the [model class list](https
  - **Infinite Horizon GP** *(Solin, Hensman, Turner: Infinite-Horizon Gaussian Processes, NeurIPS 2018)*
  - **Parallel Markov GP (with VI, EP, PL, ...)** *(Särkkä, García-Fernández: Temporal parallelization of Bayesian smoothers; Corenflos, Zhao, Särkkä: Gaussian Process Regression in Logarithmic Time; Hamelijnck, Wilkinson, Loppi, Solin, Damoulas: Spatio-Temporal Variational Gaussian Processes, NeurIPS 2021)*
  - **2nd-order Posterior Linearisation GP (sparse, Markov, ...)** *(Wilkinson, Särkkä, Solin: Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees)*
+
+## License
+
+This software is provided under the Apache License 2.0. See the accompanying LICENSE file for details.
