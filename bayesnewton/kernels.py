@@ -8,14 +8,13 @@ from warnings import warn
 
 
 class Kernel(objax.Module):
-    """
-    """
+    """ """
 
     def __call__(self, X, X2):
         return self.K(X, X2)
 
     def K(self, X, X2):
-        raise NotImplementedError('kernel function not implemented')
+        raise NotImplementedError("kernel function not implemented")
 
     def measurement_model(self):
         raise NotImplementedError
@@ -27,13 +26,14 @@ class Kernel(objax.Module):
         raise NotImplementedError
 
     def spatial_conditional(self, R=None, predict=False):
-        """
-        """
+        """ """
         return None, None
 
     def get_meanfield_block_index(self):
-        raise Exception('Either the mean-field method is not applicable to this kernel, '
-                        'or this kernel\'s get_meanfield_block_index() method has not been implemented')
+        raise Exception(
+            "Either the mean-field method is not applicable to this kernel, "
+            "or this kernel's get_meanfield_block_index() method has not been implemented"
+        )
 
     def feedback_matrix(self):
         raise NotImplementedError
@@ -45,19 +45,20 @@ class Kernel(objax.Module):
 
 
 class StationaryKernel(Kernel):
-    """
-    """
+    """ """
 
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale=1.0,
-                 fix_variance=False,
-                 fix_lengthscale=False):
+    def __init__(
+        self, variance=1.0, lengthscale=1.0, fix_variance=False, fix_lengthscale=False
+    ):
         # check whether the parameters are to be optimised
         if fix_lengthscale:
-            self.transformed_lengthscale = objax.StateVar(softplus_inv(np.array(lengthscale)))
+            self.transformed_lengthscale = objax.StateVar(
+                softplus_inv(np.array(lengthscale))
+            )
         else:
-            self.transformed_lengthscale = objax.TrainVar(softplus_inv(np.array(lengthscale)))
+            self.transformed_lengthscale = objax.TrainVar(
+                softplus_inv(np.array(lengthscale))
+            )
         if fix_variance:
             self.transformed_variance = objax.StateVar(softplus_inv(np.array(variance)))
         else:
@@ -82,7 +83,7 @@ class StationaryKernel(Kernel):
 
     @staticmethod
     def K_r(r):
-        raise NotImplementedError('kernel not implemented')
+        raise NotImplementedError("kernel not implemented")
 
     def kernel_to_state_space(self, R=None):
         raise NotImplementedError
@@ -170,20 +171,20 @@ class Matern32(StationaryKernel):
         return self.variance * (1.0 + sqrt3 * r) * np.exp(-sqrt3 * r)
 
     def kernel_to_state_space(self, R=None):
-        lam = 3.0 ** 0.5 / self.lengthscale
-        F = np.array([[0.0,       1.0],
-                      [-lam ** 2, -2 * lam]])
-        L = np.array([[0],
-                      [1]])
-        Qc = np.array([[12.0 * 3.0 ** 0.5 / self.lengthscale ** 3.0 * self.variance]])
+        lam = 3.0**0.5 / self.lengthscale
+        F = np.array([[0.0, 1.0], [-(lam**2), -2 * lam]])
+        L = np.array([[0], [1]])
+        Qc = np.array([[12.0 * 3.0**0.5 / self.lengthscale**3.0 * self.variance]])
         H = np.array([[1.0, 0.0]])
-        Pinf = np.array([[self.variance, 0.0],
-                         [0.0, 3.0 * self.variance / self.lengthscale ** 2.0]])
+        Pinf = np.array(
+            [[self.variance, 0.0], [0.0, 3.0 * self.variance / self.lengthscale**2.0]]
+        )
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        Pinf = np.array([[self.variance, 0.0],
-                         [0.0, 3.0 * self.variance / self.lengthscale ** 2.0]])
+        Pinf = np.array(
+            [[self.variance, 0.0], [0.0, 3.0 * self.variance / self.lengthscale**2.0]]
+        )
         return Pinf
 
     def measurement_model(self):
@@ -197,13 +198,14 @@ class Matern32(StationaryKernel):
         :return: state transition matrix A [2, 2]
         """
         lam = np.sqrt(3.0) / self.lengthscale
-        A = np.exp(-dt * lam) * (dt * np.array([[lam, 1.0], [-lam**2.0, -lam]]) + np.eye(2))
+        A = np.exp(-dt * lam) * (
+            dt * np.array([[lam, 1.0], [-(lam**2.0), -lam]]) + np.eye(2)
+        )
         return A
 
     def feedback_matrix(self):
-        lam = 3.0 ** 0.5 / self.lengthscale
-        F = np.array([[0.0, 1.0],
-                      [-lam ** 2, -2 * lam]])
+        lam = 3.0**0.5 / self.lengthscale
+        F = np.array([[0.0, 1.0], [-(lam**2), -2 * lam]])
         return F
 
 
@@ -225,22 +227,34 @@ class Matern52(StationaryKernel):
 
     def K_r(self, r):
         sqrt5 = np.sqrt(5.0)
-        return self.variance * (1.0 + sqrt5 * r + 5.0 / 3.0 * np.square(r)) * np.exp(-sqrt5 * r)
+        return (
+            self.variance
+            * (1.0 + sqrt5 * r + 5.0 / 3.0 * np.square(r))
+            * np.exp(-sqrt5 * r)
+        )
 
     def kernel_to_state_space(self, R=None):
         lam = 5.0**0.5 / self.lengthscale
-        F = np.array([[0.0, 1.0, 0.0],
-                      [0.0, 0.0, 1.0],
-                      [-lam**3.0, -3.0*lam**2.0, -3.0*lam]])
-        L = np.array([[0.0],
-                      [0.0],
-                      [1.0]])
-        Qc = np.array([[self.variance * 400.0 * 5.0 ** 0.5 / 3.0 / self.lengthscale ** 5.0]])
+        F = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [-(lam**3.0), -3.0 * lam**2.0, -3.0 * lam],
+            ]
+        )
+        L = np.array([[0.0], [0.0], [1.0]])
+        Qc = np.array(
+            [[self.variance * 400.0 * 5.0**0.5 / 3.0 / self.lengthscale**5.0]]
+        )
         H = np.array([[1.0, 0.0, 0.0]])
         kappa = 5.0 / 3.0 * self.variance / self.lengthscale**2.0
-        Pinf = np.array([[self.variance,    0.0,   -kappa],
-                         [0.0,    kappa, 0.0],
-                         [-kappa, 0.0,   25.0*self.variance / self.lengthscale**4.0]])
+        Pinf = np.array(
+            [
+                [self.variance, 0.0, -kappa],
+                [0.0, kappa, 0.0],
+                [-kappa, 0.0, 25.0 * self.variance / self.lengthscale**4.0],
+            ]
+        )
         return F, L, Qc, H, Pinf
 
     def measurement_model(self):
@@ -255,25 +269,43 @@ class Matern52(StationaryKernel):
         """
         lam = np.sqrt(5.0) / self.lengthscale
         dtlam = dt * lam
-        A = np.exp(-dtlam) \
-            * (dt * np.array([[lam * (0.5 * dtlam + 1.0),      dtlam + 1.0,            0.5 * dt],
-                              [-0.5 * dtlam * lam ** 2,        lam * (1.0 - dtlam),    1.0 - 0.5 * dtlam],
-                              [lam ** 3 * (0.5 * dtlam - 1.0), lam ** 2 * (dtlam - 3), lam * (0.5 * dtlam - 2.0)]])
-               + np.eye(3))
+        A = np.exp(-dtlam) * (
+            dt
+            * np.array(
+                [
+                    [lam * (0.5 * dtlam + 1.0), dtlam + 1.0, 0.5 * dt],
+                    [-0.5 * dtlam * lam**2, lam * (1.0 - dtlam), 1.0 - 0.5 * dtlam],
+                    [
+                        lam**3 * (0.5 * dtlam - 1.0),
+                        lam**2 * (dtlam - 3),
+                        lam * (0.5 * dtlam - 2.0),
+                    ],
+                ]
+            )
+            + np.eye(3)
+        )
         return A
 
     def stationary_covariance(self):
         kappa = 5.0 / 3.0 * self.variance / self.lengthscale**2.0
-        Pinf = np.array([[self.variance,    0.0,   -kappa],
-                         [0.0,    kappa, 0.0],
-                         [-kappa, 0.0,   25.0*self.variance / self.lengthscale**4.0]])
+        Pinf = np.array(
+            [
+                [self.variance, 0.0, -kappa],
+                [0.0, kappa, 0.0],
+                [-kappa, 0.0, 25.0 * self.variance / self.lengthscale**4.0],
+            ]
+        )
         return Pinf
 
     def feedback_matrix(self):
         lam = 5.0**0.5 / self.lengthscale
-        F = np.array([[0.0, 1.0, 0.0],
-                      [0.0, 0.0, 1.0],
-                      [-lam**3.0, -3.0*lam**2.0, -3.0*lam]])
+        F = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [-(lam**3.0), -3.0 * lam**2.0, -3.0 * lam],
+            ]
+        )
         return F
 
 
@@ -292,26 +324,42 @@ class Matern72(StationaryKernel):
 
     def K_r(self, r):
         sqrt7 = np.sqrt(7.0)
-        return self.variance * (1. + sqrt7 * r + 14. / 5. * np.square(r) + 7. * sqrt7 / 15. * r**3) * np.exp(-sqrt7 * r)
+        return (
+            self.variance
+            * (
+                1.0
+                + sqrt7 * r
+                + 14.0 / 5.0 * np.square(r)
+                + 7.0 * sqrt7 / 15.0 * r**3
+            )
+            * np.exp(-sqrt7 * r)
+        )
 
     def kernel_to_state_space(self, R=None):
         lam = 7.0**0.5 / self.lengthscale
-        F = np.array([[0.0,       1.0,           0.0,           0.0],
-                      [0.0,       0.0,           1.0,           0.0],
-                      [0.0,       0.0,           0.0,           1.0],
-                      [-lam**4.0, -4.0*lam**3.0, -6.0*lam**2.0, -4.0*lam]])
-        L = np.array([[0.0],
-                      [0.0],
-                      [0.0],
-                      [1.0]])
-        Qc = np.array([[self.variance * 10976.0 * 7.0 ** 0.5 / 5.0 / self.lengthscale ** 7.0]])
+        F = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [-(lam**4.0), -4.0 * lam**3.0, -6.0 * lam**2.0, -4.0 * lam],
+            ]
+        )
+        L = np.array([[0.0], [0.0], [0.0], [1.0]])
+        Qc = np.array(
+            [[self.variance * 10976.0 * 7.0**0.5 / 5.0 / self.lengthscale**7.0]]
+        )
         H = np.array([[1, 0, 0, 0]])
         kappa = 7.0 / 5.0 * self.variance / self.lengthscale**2.0
         kappa2 = 9.8 * self.variance / self.lengthscale**4.0
-        Pinf = np.array([[self.variance,   0.0,    -kappa, 0.0],
-                         [0.0,    kappa,   0.0,    -kappa2],
-                         [-kappa, 0.0,     kappa2, 0.0],
-                         [0.0,    -kappa2, 0.0,    343.0*self.variance / self.lengthscale**6.0]])
+        Pinf = np.array(
+            [
+                [self.variance, 0.0, -kappa, 0.0],
+                [0.0, kappa, 0.0, -kappa2],
+                [-kappa, 0.0, kappa2, 0.0],
+                [0.0, -kappa2, 0.0, 343.0 * self.variance / self.lengthscale**6.0],
+            ]
+        )
         return F, L, Qc, H, Pinf
 
     def measurement_model(self):
@@ -328,35 +376,79 @@ class Matern72(StationaryKernel):
         lam2 = lam * lam
         lam3 = lam2 * lam
         dtlam = dt * lam
-        dtlam2 = dtlam ** 2
-        A = np.exp(-dtlam) \
-            * (dt * np.array([[lam * (1.0 + 0.5 * dtlam + dtlam2 / 6.0),      1.0 + dtlam + 0.5 * dtlam2,
-                              0.5 * dt * (1.0 + dtlam),                       dt ** 2 / 6],
-                              [-dtlam2 * lam ** 2.0 / 6.0,                    lam * (1.0 + 0.5 * dtlam - 0.5 * dtlam2),
-                              1.0 + dtlam - 0.5 * dtlam2,                     dt * (0.5 - dtlam / 6.0)],
-                              [lam3 * dtlam * (dtlam / 6.0 - 0.5),            dtlam * lam2 * (0.5 * dtlam - 2.0),
-                              lam * (1.0 - 2.5 * dtlam + 0.5 * dtlam2),       1.0 - dtlam + dtlam2 / 6.0],
-                              [lam2 ** 2 * (dtlam - 1.0 - dtlam2 / 6.0),      lam3 * (3.5 * dtlam - 4.0 - 0.5 * dtlam2),
-                              lam2 * (4.0 * dtlam - 6.0 - 0.5 * dtlam2),      lam * (1.5 * dtlam - 3.0 - dtlam2 / 6.0)]])
-               + np.eye(4))
+        dtlam2 = dtlam**2
+        A = np.exp(-dtlam) * (
+            dt
+            * np.array(
+                [
+                    [
+                        lam * (1.0 + 0.5 * dtlam + dtlam2 / 6.0),
+                        1.0 + dtlam + 0.5 * dtlam2,
+                        0.5 * dt * (1.0 + dtlam),
+                        dt**2 / 6,
+                    ],
+                    [
+                        -dtlam2 * lam**2.0 / 6.0,
+                        lam * (1.0 + 0.5 * dtlam - 0.5 * dtlam2),
+                        1.0 + dtlam - 0.5 * dtlam2,
+                        dt * (0.5 - dtlam / 6.0),
+                    ],
+                    [
+                        lam3 * dtlam * (dtlam / 6.0 - 0.5),
+                        dtlam * lam2 * (0.5 * dtlam - 2.0),
+                        lam * (1.0 - 2.5 * dtlam + 0.5 * dtlam2),
+                        1.0 - dtlam + dtlam2 / 6.0,
+                    ],
+                    [
+                        lam2**2 * (dtlam - 1.0 - dtlam2 / 6.0),
+                        lam3 * (3.5 * dtlam - 4.0 - 0.5 * dtlam2),
+                        lam2 * (4.0 * dtlam - 6.0 - 0.5 * dtlam2),
+                        lam * (1.5 * dtlam - 3.0 - dtlam2 / 6.0),
+                    ],
+                ]
+            )
+            + np.eye(4)
+        )
         return A
 
     def stationary_covariance(self):
-        kappa = 7.0 / 5.0 * self.variance / self.lengthscale ** 2.0
-        kappa2 = 9.8 * self.variance / self.lengthscale ** 4.0
-        Pinf = np.array([[self.variance, 0.0, -kappa, 0.0],
-                         [0.0, kappa, 0.0, -kappa2],
-                         [-kappa, 0.0, kappa2, 0.0],
-                         [0.0, -kappa2, 0.0, 343.0 * self.variance / self.lengthscale ** 6.0]])
+        kappa = 7.0 / 5.0 * self.variance / self.lengthscale**2.0
+        kappa2 = 9.8 * self.variance / self.lengthscale**4.0
+        Pinf = np.array(
+            [
+                [self.variance, 0.0, -kappa, 0.0],
+                [0.0, kappa, 0.0, -kappa2],
+                [-kappa, 0.0, kappa2, 0.0],
+                [0.0, -kappa2, 0.0, 343.0 * self.variance / self.lengthscale**6.0],
+            ]
+        )
         return Pinf
 
     def feedback_matrix(self):
-        lam = 7.0 ** 0.5 / self.lengthscale
-        F = np.array([[0.0, 1.0, 0.0, 0.0],
-                      [0.0, 0.0, 1.0, 0.0],
-                      [0.0, 0.0, 0.0, 1.0],
-                      [-lam ** 4.0, -4.0 * lam ** 3.0, -6.0 * lam ** 2.0, -4.0 * lam]])
+        lam = 7.0**0.5 / self.lengthscale
+        F = np.array(
+            [
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+                [-(lam**4.0), -4.0 * lam**3.0, -6.0 * lam**2.0, -4.0 * lam],
+            ]
+        )
         return F
+
+
+class SquaredExponential(StationaryKernel):
+    """
+    The radial basis function (RBF) or squared exponential kernel. The kernel equation is
+        k(r) = σ² exp{-½ r²}
+    where:
+    r   is the Euclidean distance between the input points, scaled by the lengthscales parameter ℓ.
+    σ²  is the variance parameter
+    Functions drawn from a GP with this kernel are infinitely differentiable!
+    """
+
+    def K_r(self, r):
+        return self.variance * np.exp(-0.5 * np.square(r))
 
 
 class SpatioTemporalKernel(Kernel):
@@ -370,35 +462,46 @@ class SpatioTemporalKernel(Kernel):
     :param sparse: boolean specifying whether the model is sparse in space
     :param opt_z: boolean specifying whether to optimise the spatial input locations z
     """
-    def __init__(self,
-                 temporal_kernel,
-                 spatial_kernel,
-                 z=None,
-                 conditional=None,
-                 sparse=True,
-                 opt_z=False,
-                 spatial_dims=None):
+
+    def __init__(
+        self,
+        temporal_kernel,
+        spatial_kernel,
+        z=None,
+        conditional=None,
+        sparse=True,
+        opt_z=False,
+        spatial_dims=None,
+    ):
         self.temporal_kernel = temporal_kernel
         self.spatial_kernel = spatial_kernel
         if conditional is None:
             if sparse:
-                conditional = 'Full'
+                conditional = "Full"
             else:
-                conditional = 'DTC'
-        if opt_z and (not sparse):  # z should not be optimised if the model is not sparse
+                conditional = "DTC"
+        if opt_z and (
+            not sparse
+        ):  # z should not be optimised if the model is not sparse
             warn("spatial inducing inputs z will not be optimised because sparse=False")
             opt_z = False
         self.sparse = sparse
         if z is None:  # initialise z
             # TODO: smart initialisation
             if spatial_dims == 1:
-                z = np.linspace(-3., 3., num=15)
+                z = np.linspace(-3.0, 3.0, num=15)
             elif spatial_dims == 2:
-                z1 = np.linspace(-3., 3., num=5)
-                zA, zB = np.meshgrid(z1, z1)  # Adding additional dimension to inducing points grid
-                z = np.hstack((zA.reshape(-1, 1), zB.reshape(-1, 1)))  # Flattening grid for use in kernel functions
+                z1 = np.linspace(-3.0, 3.0, num=5)
+                zA, zB = np.meshgrid(
+                    z1, z1
+                )  # Adding additional dimension to inducing points grid
+                z = np.hstack(
+                    (zA.reshape(-1, 1), zB.reshape(-1, 1))
+                )  # Flattening grid for use in kernel functions
             else:
-                raise NotImplementedError('please provide an initialisation for inducing inputs z')
+                raise NotImplementedError(
+                    "please provide an initialisation for inducing inputs z"
+                )
         if z.ndim < 2:
             z = z[:, np.newaxis]
         if spatial_dims is None:
@@ -409,16 +512,18 @@ class SpatioTemporalKernel(Kernel):
             self.z = objax.TrainVar(np.array(z))  # .reshape(-1, 1)
         else:
             self.z = objax.StateVar(np.array(z))
-        if conditional in ['DTC', 'dtc']:
+        if conditional in ["DTC", "dtc"]:
             self.conditional_covariance = self.deterministic_training_conditional
-        elif conditional in ['FIC', 'FITC', 'fic', 'fitc']:
+        elif conditional in ["FIC", "FITC", "fic", "fitc"]:
             self.conditional_covariance = self.fully_independent_conditional
-        elif conditional in ['Full', 'full']:
+        elif conditional in ["Full", "full"]:
             self.conditional_covariance = self.full_conditional
         else:
-            raise NotImplementedError('conditional method not recognised')
-        if (not sparse) and (conditional != 'DTC'):
-            warn("You chose a non-deterministic conditional, but \'DTC\' will be used because the model is not sparse")
+            raise NotImplementedError("conditional method not recognised")
+        if (not sparse) and (conditional != "DTC"):
+            warn(
+                "You chose a non-deterministic conditional, but 'DTC' will be used because the model is not sparse"
+            )
 
     @property
     def variance(self):
@@ -465,7 +570,12 @@ class SpatioTemporalKernel(Kernel):
         Compute the spatial conditional, i.e. the measurement model projecting the latent function u(t) to f(X,R)
             f(X,R) | u(t) ~ N(f(X,R) | B u(t), C)
         """
-        Qzz, Lzz = self.inducing_precision()  # pre-calculate inducing precision and its Cholesky factor
+        (
+            Qzz,
+            Lzz,
+        ) = (
+            self.inducing_precision()
+        )  # pre-calculate inducing precision and its Cholesky factor
         if self.sparse or predict:
             # TODO: save compute if R is constant:
             # gridded_data = np.all(np.abs(np.diff(R, axis=0)) < 1e-10)
@@ -475,7 +585,9 @@ class SpatioTemporalKernel(Kernel):
             Krz = vmap(self.spatial_kernel, [0, None])(R, self.z.value)
             K = Krz @ Qzz  # Krz / Kzz
             B = K @ Lzz
-            C = vmap(self.conditional_covariance)(X, R, Krz, K)  # conditional covariance
+            C = vmap(self.conditional_covariance)(
+                X, R, Krz, K
+            )  # conditional covariance
         else:
             B = Lzz
             # conditional covariance (deterministic mapping is exact in non-sparse case)
@@ -571,21 +683,28 @@ class SpatioTemporalMatern12(SpatioTemporalKernel):
         temporal lengthscale, lt
         spatial lengthscale, ls
     """
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale_time=1.0,
-                 lengthscale_space=1.0,
-                 z=None,
-                 sparse=True,
-                 opt_z=False,
-                 conditional=None):
-        super().__init__(temporal_kernel=Matern12(variance=variance, lengthscale=lengthscale_time),
-                         spatial_kernel=Matern12(variance=1., lengthscale=lengthscale_space, fix_variance=True),
-                         z=z,
-                         conditional=conditional,
-                         sparse=sparse,
-                         opt_z=opt_z)
-        self.name = 'Spatio-Temporal Matern-1/2'
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale_time=1.0,
+        lengthscale_space=1.0,
+        z=None,
+        sparse=True,
+        opt_z=False,
+        conditional=None,
+    ):
+        super().__init__(
+            temporal_kernel=Matern12(variance=variance, lengthscale=lengthscale_time),
+            spatial_kernel=Matern12(
+                variance=1.0, lengthscale=lengthscale_space, fix_variance=True
+            ),
+            z=z,
+            conditional=conditional,
+            sparse=sparse,
+            opt_z=opt_z,
+        )
+        self.name = "Spatio-Temporal Matern-1/2"
 
 
 class SpatioTemporalMatern32(SpatioTemporalKernel):
@@ -596,21 +715,28 @@ class SpatioTemporalMatern32(SpatioTemporalKernel):
         temporal lengthscale, lt
         spatial lengthscale, ls
     """
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale_time=1.0,
-                 lengthscale_space=1.0,
-                 z=None,
-                 sparse=True,
-                 opt_z=False,
-                 conditional=None):
-        super().__init__(temporal_kernel=Matern32(variance=variance, lengthscale=lengthscale_time),
-                         spatial_kernel=Matern32(variance=1., lengthscale=lengthscale_space, fix_variance=True),
-                         z=z,
-                         conditional=conditional,
-                         sparse=sparse,
-                         opt_z=opt_z)
-        self.name = 'Spatio-Temporal Matern-3/2'
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale_time=1.0,
+        lengthscale_space=1.0,
+        z=None,
+        sparse=True,
+        opt_z=False,
+        conditional=None,
+    ):
+        super().__init__(
+            temporal_kernel=Matern32(variance=variance, lengthscale=lengthscale_time),
+            spatial_kernel=Matern32(
+                variance=1.0, lengthscale=lengthscale_space, fix_variance=True
+            ),
+            z=z,
+            conditional=conditional,
+            sparse=sparse,
+            opt_z=opt_z,
+        )
+        self.name = "Spatio-Temporal Matern-3/2"
 
 
 class SpatioTemporalMatern52(SpatioTemporalKernel):
@@ -621,21 +747,28 @@ class SpatioTemporalMatern52(SpatioTemporalKernel):
         temporal lengthscale, lt
         spatial lengthscale, ls
     """
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale_time=1.0,
-                 lengthscale_space=1.0,
-                 z=None,
-                 sparse=True,
-                 opt_z=False,
-                 conditional=None):
-        super().__init__(temporal_kernel=Matern52(variance=variance, lengthscale=lengthscale_time),
-                         spatial_kernel=Matern52(variance=1., lengthscale=lengthscale_space, fix_variance=True),
-                         z=z,
-                         conditional=conditional,
-                         sparse=sparse,
-                         opt_z=opt_z)
-        self.name = 'Spatio-Temporal Matern-5/2'
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale_time=1.0,
+        lengthscale_space=1.0,
+        z=None,
+        sparse=True,
+        opt_z=False,
+        conditional=None,
+    ):
+        super().__init__(
+            temporal_kernel=Matern52(variance=variance, lengthscale=lengthscale_time),
+            spatial_kernel=Matern52(
+                variance=1.0, lengthscale=lengthscale_space, fix_variance=True
+            ),
+            z=z,
+            conditional=conditional,
+            sparse=sparse,
+            opt_z=opt_z,
+        )
+        self.name = "Spatio-Temporal Matern-5/2"
 
 
 class SpatialMatern12(SpatioTemporalKernel):
@@ -646,23 +779,32 @@ class SpatialMatern12(SpatioTemporalKernel):
         variance, σ²
         lengthscale, l
     """
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale=1.0,
-                 z=None,
-                 sparse=True,
-                 opt_z=False,
-                 conditional=None):
-        super().__init__(temporal_kernel=Matern12(variance=variance, lengthscale=lengthscale),
-                         spatial_kernel=Matern12(variance=1., lengthscale=lengthscale, fix_variance=True),
-                         z=z,
-                         conditional=conditional,
-                         sparse=sparse,
-                         opt_z=opt_z)
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale=1.0,
+        z=None,
+        sparse=True,
+        opt_z=False,
+        conditional=None,
+    ):
+        super().__init__(
+            temporal_kernel=Matern12(variance=variance, lengthscale=lengthscale),
+            spatial_kernel=Matern12(
+                variance=1.0, lengthscale=lengthscale, fix_variance=True
+            ),
+            z=z,
+            conditional=conditional,
+            sparse=sparse,
+            opt_z=opt_z,
+        )
         # --- couple the lengthscales ---
-        self.spatial_kernel.transformed_lengthscale = self.temporal_kernel.transformed_lengthscale
+        self.spatial_kernel.transformed_lengthscale = (
+            self.temporal_kernel.transformed_lengthscale
+        )
         # -------------------------------
-        self.name = 'Spatial Matern-1/2'
+        self.name = "Spatial Matern-1/2"
 
 
 class SpatialMatern32(SpatioTemporalKernel):
@@ -673,23 +815,32 @@ class SpatialMatern32(SpatioTemporalKernel):
         variance, σ²
         lengthscale, l
     """
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale=1.0,
-                 z=None,
-                 sparse=True,
-                 opt_z=False,
-                 conditional=None):
-        super().__init__(temporal_kernel=Matern32(variance=variance, lengthscale=lengthscale),
-                         spatial_kernel=Matern32(variance=1., lengthscale=lengthscale, fix_variance=True),
-                         z=z,
-                         conditional=conditional,
-                         sparse=sparse,
-                         opt_z=opt_z)
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale=1.0,
+        z=None,
+        sparse=True,
+        opt_z=False,
+        conditional=None,
+    ):
+        super().__init__(
+            temporal_kernel=Matern32(variance=variance, lengthscale=lengthscale),
+            spatial_kernel=Matern32(
+                variance=1.0, lengthscale=lengthscale, fix_variance=True
+            ),
+            z=z,
+            conditional=conditional,
+            sparse=sparse,
+            opt_z=opt_z,
+        )
         # --- couple the lengthscales ---
-        self.spatial_kernel.transformed_lengthscale = self.temporal_kernel.transformed_lengthscale
+        self.spatial_kernel.transformed_lengthscale = (
+            self.temporal_kernel.transformed_lengthscale
+        )
         # -------------------------------
-        self.name = 'Spatial Matern-3/2'
+        self.name = "Spatial Matern-3/2"
 
 
 class SpatialMatern52(SpatioTemporalKernel):
@@ -700,23 +851,32 @@ class SpatialMatern52(SpatioTemporalKernel):
         variance, σ²
         lengthscale, l
     """
-    def __init__(self,
-                 variance=1.0,
-                 lengthscale=1.0,
-                 z=None,
-                 sparse=True,
-                 opt_z=False,
-                 conditional=None):
-        super().__init__(temporal_kernel=Matern52(variance=variance, lengthscale=lengthscale),
-                         spatial_kernel=Matern52(variance=1., lengthscale=lengthscale, fix_variance=True),
-                         z=z,
-                         conditional=conditional,
-                         sparse=sparse,
-                         opt_z=opt_z)
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale=1.0,
+        z=None,
+        sparse=True,
+        opt_z=False,
+        conditional=None,
+    ):
+        super().__init__(
+            temporal_kernel=Matern52(variance=variance, lengthscale=lengthscale),
+            spatial_kernel=Matern52(
+                variance=1.0, lengthscale=lengthscale, fix_variance=True
+            ),
+            z=z,
+            conditional=conditional,
+            sparse=sparse,
+            opt_z=opt_z,
+        )
         # --- couple the lengthscales ---
-        self.spatial_kernel.transformed_lengthscale = self.temporal_kernel.transformed_lengthscale
+        self.spatial_kernel.transformed_lengthscale = (
+            self.temporal_kernel.transformed_lengthscale
+        )
         # -------------------------------
-        self.name = 'Spatial Matern-5/2'
+        self.name = "Spatial Matern-5/2"
 
 
 class Cosine(Kernel):
@@ -736,18 +896,18 @@ class Cosine(Kernel):
     A      = ( cos(ωΔt)   -sin(ωΔt)
                sin(ωΔt)    cos(ωΔt) )
     """
+
     def __init__(self, frequency=1.0):
         self.transformed_frequency = objax.TrainVar(np.array(softplus_inv(frequency)))
         super().__init__()
-        self.name = 'Cosine'
+        self.name = "Cosine"
 
     @property
     def frequency(self):
         return softplus(self.transformed_frequency.value)
 
     def kernel_to_state_space(self, R=None):
-        F = np.array([[0.0,   -self.frequency],
-                      [self.frequency, 0.0]])
+        F = np.array([[0.0, -self.frequency], [self.frequency, 0.0]])
         H = np.array([[1.0, 0.0]])
         L = []
         Qc = []
@@ -773,8 +933,7 @@ class Cosine(Kernel):
         return state_transitions
 
     def feedback_matrix(self):
-        F = np.array([[0.0, -self.frequency],
-                      [self.frequency, 0.0]])
+        F = np.array([[0.0, -self.frequency], [self.frequency, 0.0]])
         return F
 
 
@@ -790,30 +949,52 @@ class QuasiPeriodicMatern12(Kernel):
     The associated continuous-time state space model matrices are constructed via
     a sum of cosines times a Matern-1/2.
     """
-    def __init__(self, variance=1.0, lengthscale_periodic=1.0, period=1.0, lengthscale_matern=1.0, order=6):
-        self.transformed_lengthscale_periodic = objax.TrainVar(np.array(softplus_inv(lengthscale_periodic)))
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale_periodic=1.0,
+        period=1.0,
+        lengthscale_matern=1.0,
+        order=6,
+    ):
+        self.transformed_lengthscale_periodic = objax.TrainVar(
+            np.array(softplus_inv(lengthscale_periodic))
+        )
         self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
         self.transformed_period = objax.TrainVar(np.array(softplus_inv(period)))
-        self.transformed_lengthscale_matern = objax.TrainVar(np.array(softplus_inv(lengthscale_matern)))
+        self.transformed_lengthscale_matern = objax.TrainVar(
+            np.array(softplus_inv(lengthscale_matern))
+        )
         super().__init__()
-        self.name = 'Quasi-periodic Matern-1/2'
+        self.name = "Quasi-periodic Matern-1/2"
         self.order = order
-        self.igrid = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[1]
-        factorial_mesh_K = np.array([[1., 1., 1., 1., 1., 1., 1.],
-                                     [1., 1., 1., 1., 1., 1., 1.],
-                                     [2., 2., 2., 2., 2., 2., 2.],
-                                     [6., 6., 6., 6., 6., 6., 6.],
-                                     [24., 24., 24., 24., 24., 24., 24.],
-                                     [120., 120., 120., 120., 120., 120., 120.],
-                                     [720., 720., 720., 720., 720., 720., 720.]])
-        b = np.array([[1., 0., 0., 0., 0., 0., 0.],
-                      [0., 2., 0., 0., 0., 0., 0.],
-                      [2., 0., 2., 0., 0., 0., 0.],
-                      [0., 6., 0., 2., 0., 0., 0.],
-                      [6., 0., 8., 0., 2., 0., 0.],
-                      [0., 20., 0., 10., 0., 2., 0.],
-                      [20., 0., 30., 0., 12., 0., 2.]])
-        self.b_fmK_2igrid = b * (1. / factorial_mesh_K) * (2. ** -self.igrid)
+        self.igrid = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[
+            1
+        ]
+        factorial_mesh_K = np.array(
+            [
+                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
+                [6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0],
+                [24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0],
+                [120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0],
+                [720.0, 720.0, 720.0, 720.0, 720.0, 720.0, 720.0],
+            ]
+        )
+        b = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 6.0, 0.0, 2.0, 0.0, 0.0, 0.0],
+                [6.0, 0.0, 8.0, 0.0, 2.0, 0.0, 0.0],
+                [0.0, 20.0, 0.0, 10.0, 0.0, 2.0, 0.0],
+                [20.0, 0.0, 30.0, 0.0, 12.0, 0.0, 2.0],
+            ]
+        )
+        self.b_fmK_2igrid = b * (1.0 / factorial_mesh_K) * (2.0**-self.igrid)
 
     @property
     def variance(self):
@@ -835,18 +1016,25 @@ class QuasiPeriodicMatern12(Kernel):
         raise NotImplementedError
 
     def kernel_to_state_space(self, R=None):
-        var_p = 1.
+        var_p = 1.0
         ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
+        a = (
+            self.b_fmK_2igrid
+            * ell_p ** (-2.0 * self.igrid)
+            * np.exp(-1.0 / ell_p**2.0)
+            * var_p
+        )
         q2 = np.sum(a, axis=0)
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
-        F_p = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        F_p = np.kron(
+            np.diag(np.arange(self.order + 1)), np.array([[0.0, -omega], [omega, 0.0]])
+        )
         L_p = np.eye(2 * (self.order + 1))
         # Qc_p = np.zeros(2 * (self.N + 1))
         Pinf_p = np.kron(np.diag(q2), np.eye(2))
-        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1.0, 0.0]))
         F_m = np.array([[-1.0 / self.lengthscale_matern]])
         L_m = np.array([[1.0]])
         Qc_m = np.array([[2.0 * self.variance / self.lengthscale_matern]])
@@ -869,9 +1057,14 @@ class QuasiPeriodicMatern12(Kernel):
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        var_p = 1.
+        var_p = 1.0
         ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
+        a = (
+            self.b_fmK_2igrid
+            * ell_p ** (-2.0 * self.igrid)
+            * np.exp(-1.0 / ell_p**2.0)
+            * var_p
+        )
         q2 = np.sum(a, axis=0)
         Pinf_m = np.array([[self.variance]])
         Pinf = block_diag(
@@ -886,7 +1079,7 @@ class QuasiPeriodicMatern12(Kernel):
         return Pinf
 
     def measurement_model(self):
-        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1.0, 0.0]))
         H_m = np.array([[1.0]])
         H = np.kron(H_m, H_p)
         return H
@@ -908,14 +1101,18 @@ class QuasiPeriodicMatern12(Kernel):
         R4 = rotation_matrix(dt, harmonics[4])
         R5 = rotation_matrix(dt, harmonics[5])
         R6 = rotation_matrix(dt, harmonics[6])
-        A = np.exp(-dt / self.lengthscale_matern) * block_diag(R0, R1, R2, R3, R4, R5, R6)
+        A = np.exp(-dt / self.lengthscale_matern) * block_diag(
+            R0, R1, R2, R3, R4, R5, R6
+        )
         return A
 
     def feedback_matrix(self):
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
-        F_p = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        F_p = np.kron(
+            np.diag(np.arange(self.order + 1)), np.array([[0.0, -omega], [omega, 0.0]])
+        )
         F_m = np.array([[-1.0 / self.lengthscale_matern]])
         F = np.kron(F_m, np.eye(2 * (self.order + 1))) + np.kron(np.eye(1), F_p)
         return F
@@ -932,30 +1129,52 @@ class QuasiPeriodicMatern32(Kernel):
     The associated continuous-time state space model matrices are constructed via
     a sum of cosines times a Matern-3/2.
     """
-    def __init__(self, variance=1.0, lengthscale_periodic=1.0, period=1.0, lengthscale_matern=1.0, order=6):
-        self.transformed_lengthscale_periodic = objax.TrainVar(np.array(softplus_inv(lengthscale_periodic)))
+
+    def __init__(
+        self,
+        variance=1.0,
+        lengthscale_periodic=1.0,
+        period=1.0,
+        lengthscale_matern=1.0,
+        order=6,
+    ):
+        self.transformed_lengthscale_periodic = objax.TrainVar(
+            np.array(softplus_inv(lengthscale_periodic))
+        )
         self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
         self.transformed_period = objax.TrainVar(np.array(softplus_inv(period)))
-        self.transformed_lengthscale_matern = objax.TrainVar(np.array(softplus_inv(lengthscale_matern)))
+        self.transformed_lengthscale_matern = objax.TrainVar(
+            np.array(softplus_inv(lengthscale_matern))
+        )
         super().__init__()
-        self.name = 'Quasi-periodic Matern-3/2'
+        self.name = "Quasi-periodic Matern-3/2"
         self.order = order
-        self.igrid = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[1]
-        factorial_mesh_K = np.array([[1., 1., 1., 1., 1., 1., 1.],
-                                     [1., 1., 1., 1., 1., 1., 1.],
-                                     [2., 2., 2., 2., 2., 2., 2.],
-                                     [6., 6., 6., 6., 6., 6., 6.],
-                                     [24., 24., 24., 24., 24., 24., 24.],
-                                     [120., 120., 120., 120., 120., 120., 120.],
-                                     [720., 720., 720., 720., 720., 720., 720.]])
-        b = np.array([[1., 0., 0., 0., 0., 0., 0.],
-                      [0., 2., 0., 0., 0., 0., 0.],
-                      [2., 0., 2., 0., 0., 0., 0.],
-                      [0., 6., 0., 2., 0., 0., 0.],
-                      [6., 0., 8., 0., 2., 0., 0.],
-                      [0., 20., 0., 10., 0., 2., 0.],
-                      [20., 0., 30., 0., 12., 0., 2.]])
-        self.b_fmK_2igrid = b * (1. / factorial_mesh_K) * (2. ** -self.igrid)
+        self.igrid = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[
+            1
+        ]
+        factorial_mesh_K = np.array(
+            [
+                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
+                [6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0],
+                [24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0],
+                [120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0],
+                [720.0, 720.0, 720.0, 720.0, 720.0, 720.0, 720.0],
+            ]
+        )
+        b = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 6.0, 0.0, 2.0, 0.0, 0.0, 0.0],
+                [6.0, 0.0, 8.0, 0.0, 2.0, 0.0, 0.0],
+                [0.0, 20.0, 0.0, 10.0, 0.0, 2.0, 0.0],
+                [20.0, 0.0, 30.0, 0.0, 12.0, 0.0, 2.0],
+            ]
+        )
+        self.b_fmK_2igrid = b * (1.0 / factorial_mesh_K) * (2.0**-self.igrid)
 
     @property
     def variance(self):
@@ -977,27 +1196,38 @@ class QuasiPeriodicMatern32(Kernel):
         raise NotImplementedError
 
     def kernel_to_state_space(self, R=None):
-        var_p = 1.
+        var_p = 1.0
         ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
+        a = (
+            self.b_fmK_2igrid
+            * ell_p ** (-2.0 * self.igrid)
+            * np.exp(-1.0 / ell_p**2.0)
+            * var_p
+        )
         q2 = np.sum(a, axis=0)
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
-        F_p = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        F_p = np.kron(
+            np.diag(np.arange(self.order + 1)), np.array([[0.0, -omega], [omega, 0.0]])
+        )
         L_p = np.eye(2 * (self.order + 1))
         # Qc_p = np.zeros(2 * (self.N + 1))
         Pinf_p = np.kron(np.diag(q2), np.eye(2))
-        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
-        lam = 3.0 ** 0.5 / self.lengthscale_matern
-        F_m = np.array([[0.0, 1.0],
-                        [-lam ** 2, -2 * lam]])
-        L_m = np.array([[0],
-                        [1]])
-        Qc_m = np.array([[12.0 * 3.0 ** 0.5 / self.lengthscale_matern ** 3.0 * self.variance]])
+        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1.0, 0.0]))
+        lam = 3.0**0.5 / self.lengthscale_matern
+        F_m = np.array([[0.0, 1.0], [-(lam**2), -2 * lam]])
+        L_m = np.array([[0], [1]])
+        Qc_m = np.array(
+            [[12.0 * 3.0**0.5 / self.lengthscale_matern**3.0 * self.variance]]
+        )
         H_m = np.array([[1.0, 0.0]])
-        Pinf_m = np.array([[self.variance, 0.0],
-                           [0.0, 3.0 * self.variance / self.lengthscale_matern ** 2.0]])
+        Pinf_m = np.array(
+            [
+                [self.variance, 0.0],
+                [0.0, 3.0 * self.variance / self.lengthscale_matern**2.0],
+            ]
+        )
         # F = np.kron(F_p, np.eye(2)) + np.kron(np.eye(14), F_m)
         F = np.kron(F_m, np.eye(2 * (self.order + 1))) + np.kron(np.eye(2), F_p)
         L = np.kron(L_m, L_p)
@@ -1016,12 +1246,21 @@ class QuasiPeriodicMatern32(Kernel):
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        var_p = 1.
+        var_p = 1.0
         ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
+        a = (
+            self.b_fmK_2igrid
+            * ell_p ** (-2.0 * self.igrid)
+            * np.exp(-1.0 / ell_p**2.0)
+            * var_p
+        )
         q2 = np.sum(a, axis=0)
-        Pinf_m = np.array([[self.variance, 0.0],
-                           [0.0, 3.0 * self.variance / self.lengthscale_matern ** 2.0]])
+        Pinf_m = np.array(
+            [
+                [self.variance, 0.0],
+                [0.0, 3.0 * self.variance / self.lengthscale_matern**2.0],
+            ]
+        )
         Pinf = block_diag(
             np.kron(Pinf_m, q2[0] * np.eye(2)),
             np.kron(Pinf_m, q2[1] * np.eye(2)),
@@ -1034,7 +1273,7 @@ class QuasiPeriodicMatern32(Kernel):
         return Pinf
 
     def measurement_model(self):
-        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        H_p = np.kron(np.ones([1, self.order + 1]), np.array([1.0, 0.0]))
         H_m = np.array([[1.0, 0.0]])
         H = np.kron(H_m, H_p)
         return H
@@ -1063,20 +1302,20 @@ class QuasiPeriodicMatern32(Kernel):
     @staticmethod
     def subband_mat32(dt, lam, omega):
         R = rotation_matrix(dt, omega)
-        Ri = np.block([
-            [(1. + dt * lam) * R, dt * R],
-            [-dt * lam ** 2 * R,  (1. - dt * lam) * R]
-        ])
+        Ri = np.block(
+            [[(1.0 + dt * lam) * R, dt * R], [-dt * lam**2 * R, (1.0 - dt * lam) * R]]
+        )
         return Ri
 
     def feedback_matrix(self):
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
-        F_p = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
-        lam = 3.0 ** 0.5 / self.lengthscale_matern
-        F_m = np.array([[0.0, 1.0],
-                        [-lam ** 2, -2 * lam]])
+        F_p = np.kron(
+            np.diag(np.arange(self.order + 1)), np.array([[0.0, -omega], [omega, 0.0]])
+        )
+        lam = 3.0**0.5 / self.lengthscale_matern
+        F_m = np.array([[0.0, 1.0], [-(lam**2), -2 * lam]])
         F = np.kron(F_m, np.eye(2 * (self.order + 1))) + np.kron(np.eye(2), F_p)
         return F
 
@@ -1103,15 +1342,22 @@ class SubbandMatern12(Kernel):
     A      = exp(-Δt/l) ( cos(ωΔt)   -sin(ωΔt)
                           sin(ωΔt)    cos(ωΔt) )
     """
-    def __init__(self, variance=1.0, lengthscale=1.0, radial_frequency=1.0, fix_variance=False):
-        self.transformed_lengthscale = objax.TrainVar(np.array(softplus_inv(lengthscale)))
+
+    def __init__(
+        self, variance=1.0, lengthscale=1.0, radial_frequency=1.0, fix_variance=False
+    ):
+        self.transformed_lengthscale = objax.TrainVar(
+            np.array(softplus_inv(lengthscale))
+        )
         if fix_variance:
             self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
         else:
             self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
-        self.transformed_radial_frequency = objax.TrainVar(np.array(softplus_inv(radial_frequency)))
+        self.transformed_radial_frequency = objax.TrainVar(
+            np.array(softplus_inv(radial_frequency))
+        )
         super().__init__()
-        self.name = 'Subband Matern-1/2'
+        self.name = "Subband Matern-1/2"
 
     @property
     def variance(self):
@@ -1134,8 +1380,7 @@ class SubbandMatern12(Kernel):
         Qc_mat = np.array([[2.0 * self.variance / self.lengthscale]])
         H_mat = np.array([[1.0]])
         Pinf_mat = np.array([[self.variance]])
-        F_cos = np.array([[0.0, -self.radial_frequency],
-                          [self.radial_frequency, 0.0]])
+        F_cos = np.array([[0.0, -self.radial_frequency], [self.radial_frequency, 0.0]])
         H_cos = np.array([[1.0, 0.0]])
         # F = (-1/l -ω
         #      ω    -1/l)
@@ -1172,8 +1417,7 @@ class SubbandMatern12(Kernel):
 
     def feedback_matrix(self):
         F_mat = np.array([[-1.0 / self.lengthscale]])
-        F_cos = np.array([[0.0, -self.radial_frequency],
-                          [self.radial_frequency, 0.0]])
+        F_cos = np.array([[0.0, -self.radial_frequency], [self.radial_frequency, 0.0]])
         # F = (-1/l -ω
         #      ω    -1/l)
         F = np.kron(F_mat, np.eye(2)) + F_cos
@@ -1214,15 +1458,22 @@ class SubbandMatern32(Kernel):
     A = exp(-Δt/l) ( (1+Δtλ)R   ΔtR
                      -Δtλ²R    (1-Δtλ)R )
     """
-    def __init__(self, variance=1.0, lengthscale=1.0, radial_frequency=1.0, fix_variance=False):
-        self.transformed_lengthscale = objax.TrainVar(np.array(softplus_inv(lengthscale)))
+
+    def __init__(
+        self, variance=1.0, lengthscale=1.0, radial_frequency=1.0, fix_variance=False
+    ):
+        self.transformed_lengthscale = objax.TrainVar(
+            np.array(softplus_inv(lengthscale))
+        )
         if fix_variance:
             self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
         else:
             self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
-        self.transformed_radial_frequency = objax.TrainVar(np.array(softplus_inv(radial_frequency)))
+        self.transformed_radial_frequency = objax.TrainVar(
+            np.array(softplus_inv(radial_frequency))
+        )
         super().__init__()
-        self.name = 'Subband Matern-3/2'
+        self.name = "Subband Matern-3/2"
 
     @property
     def variance(self):
@@ -1240,17 +1491,17 @@ class SubbandMatern32(Kernel):
         raise NotImplementedError
 
     def kernel_to_state_space(self, R=None):
-        lam = 3.0 ** 0.5 / self.lengthscale
-        F_mat = np.array([[0.0, 1.0],
-                          [-lam ** 2, -2 * lam]])
-        L_mat = np.array([[0],
-                          [1]])
-        Qc_mat = np.array([[12.0 * 3.0 ** 0.5 / self.lengthscale ** 3.0 * self.variance]])
+        lam = 3.0**0.5 / self.lengthscale
+        F_mat = np.array([[0.0, 1.0], [-(lam**2), -2 * lam]])
+        L_mat = np.array([[0], [1]])
+        Qc_mat = np.array(
+            [[12.0 * 3.0**0.5 / self.lengthscale**3.0 * self.variance]]
+        )
         H_mat = np.array([[1.0, 0.0]])
-        Pinf_mat = np.array([[self.variance, 0.0],
-                             [0.0, 3.0 * self.variance / self.lengthscale ** 2.0]])
-        F_cos = np.array([[0.0, -self.radial_frequency],
-                          [self.radial_frequency, 0.0]])
+        Pinf_mat = np.array(
+            [[self.variance, 0.0], [0.0, 3.0 * self.variance / self.lengthscale**2.0]]
+        )
+        F_cos = np.array([[0.0, -self.radial_frequency], [self.radial_frequency, 0.0]])
         H_cos = np.array([[1.0, 0.0]])
         # F = (0   -ω   1   0
         #      ω    0   0   1
@@ -1264,8 +1515,9 @@ class SubbandMatern32(Kernel):
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        Pinf_mat = np.array([[self.variance, 0.0],
-                             [0.0, 3.0 * self.variance / self.lengthscale ** 2.0]])
+        Pinf_mat = np.array(
+            [[self.variance, 0.0], [0.0, 3.0 * self.variance / self.lengthscale**2.0]]
+        )
         Pinf = np.kron(Pinf_mat, np.eye(2))
         return Pinf
 
@@ -1284,18 +1536,15 @@ class SubbandMatern32(Kernel):
         """
         lam = np.sqrt(3.0) / self.lengthscale
         R = rotation_matrix(dt, self.radial_frequency)
-        A = np.exp(-dt * lam) * np.block([
-            [(1. + dt * lam) * R, dt * R],
-            [-dt * lam ** 2 * R, (1. - dt * lam) * R]
-        ])
+        A = np.exp(-dt * lam) * np.block(
+            [[(1.0 + dt * lam) * R, dt * R], [-dt * lam**2 * R, (1.0 - dt * lam) * R]]
+        )
         return A
 
     def feedback_matrix(self):
-        lam = 3.0 ** 0.5 / self.lengthscale
-        F_mat = np.array([[0.0, 1.0],
-                          [-lam ** 2, -2 * lam]])
-        F_cos = np.array([[0.0, -self.radial_frequency],
-                          [self.radial_frequency, 0.0]])
+        lam = 3.0**0.5 / self.lengthscale
+        F_mat = np.array([[0.0, 1.0], [-(lam**2), -2 * lam]])
+        F_cos = np.array([[0.0, -self.radial_frequency], [self.radial_frequency, 0.0]])
         # F = (0   -ω   1   0
         #      ω    0   0   1
         #      -λ²  0  -2λ -ω
@@ -1343,15 +1592,22 @@ class SubbandMatern52(Kernel):
                     -1/2Δt²λ³R           (1+Δtλ(1-Δtλ))R    -1/2Δt(-2+Δtλ)R
                      1/2Δtλ³(-2+Δtλ)R     Δt²(-3+Δtλ)R       1/2(2+Δtλ(-4+Δtλ))R )
     """
-    def __init__(self, variance=1.0, lengthscale=1.0, radial_frequency=1.0, fix_variance=False):
-        self.transformed_lengthscale = objax.TrainVar(np.array(softplus_inv(lengthscale)))
+
+    def __init__(
+        self, variance=1.0, lengthscale=1.0, radial_frequency=1.0, fix_variance=False
+    ):
+        self.transformed_lengthscale = objax.TrainVar(
+            np.array(softplus_inv(lengthscale))
+        )
         if fix_variance:
             self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
         else:
             self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
-        self.transformed_radial_frequency = objax.TrainVar(np.array(softplus_inv(radial_frequency)))
+        self.transformed_radial_frequency = objax.TrainVar(
+            np.array(softplus_inv(radial_frequency))
+        )
         super().__init__()
-        self.name = 'Subband Matern-5/2'
+        self.name = "Subband Matern-5/2"
 
     @property
     def variance(self):
@@ -1369,21 +1625,28 @@ class SubbandMatern52(Kernel):
         raise NotImplementedError
 
     def kernel_to_state_space(self, R=None):
-        lam = 5.0 ** 0.5 / self.lengthscale
-        F_mat = np.array([[0.0, 1.0, 0.0],
-                          [0.0, 0.0, 1.0],
-                          [-lam ** 3.0, -3.0 * lam ** 2.0, -3.0 * lam]])
-        L_mat = np.array([[0.0],
-                          [0.0],
-                          [1.0]])
-        Qc_mat = np.array([[self.variance * 400.0 * 5.0 ** 0.5 / 3.0 / self.lengthscale ** 5.0]])
+        lam = 5.0**0.5 / self.lengthscale
+        F_mat = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [-(lam**3.0), -3.0 * lam**2.0, -3.0 * lam],
+            ]
+        )
+        L_mat = np.array([[0.0], [0.0], [1.0]])
+        Qc_mat = np.array(
+            [[self.variance * 400.0 * 5.0**0.5 / 3.0 / self.lengthscale**5.0]]
+        )
         H_mat = np.array([[1.0, 0.0, 0.0]])
-        kappa = 5.0 / 3.0 * self.variance / self.lengthscale ** 2.0
-        Pinf_mat = np.array([[self.variance, 0.0, -kappa],
-                             [0.0, kappa, 0.0],
-                             [-kappa, 0.0, 25.0 * self.variance / self.lengthscale ** 4.0]])
-        F_cos = np.array([[0.0, -self.radial_frequency],
-                          [self.radial_frequency, 0.0]])
+        kappa = 5.0 / 3.0 * self.variance / self.lengthscale**2.0
+        Pinf_mat = np.array(
+            [
+                [self.variance, 0.0, -kappa],
+                [0.0, kappa, 0.0],
+                [-kappa, 0.0, 25.0 * self.variance / self.lengthscale**4.0],
+            ]
+        )
+        F_cos = np.array([[0.0, -self.radial_frequency], [self.radial_frequency, 0.0]])
         H_cos = np.array([[1.0, 0.0]])
         # F = (0   -ω   1    0    0   0
         #      ω    0   0    1    0   0
@@ -1399,10 +1662,14 @@ class SubbandMatern52(Kernel):
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        kappa = 5.0 / 3.0 * self.variance / self.lengthscale ** 2.0
-        Pinf_mat = np.array([[self.variance, 0.0, -kappa],
-                             [0.0, kappa, 0.0],
-                             [-kappa, 0.0, 25.0 * self.variance / self.lengthscale ** 4.0]])
+        kappa = 5.0 / 3.0 * self.variance / self.lengthscale**2.0
+        Pinf_mat = np.array(
+            [
+                [self.variance, 0.0, -kappa],
+                [0.0, kappa, 0.0],
+                [-kappa, 0.0, 25.0 * self.variance / self.lengthscale**4.0],
+            ]
+        )
         Pinf = np.kron(Pinf_mat, np.eye(2))
         return Pinf
 
@@ -1419,22 +1686,39 @@ class SubbandMatern52(Kernel):
         :param dt: step size(s), Δt = tₙ - tₙ₋₁ [1]
         :return: state transition matrix A [6, 6]
         """
-        lam = 5.0 ** 0.5 / self.lengthscale
+        lam = 5.0**0.5 / self.lengthscale
         R = rotation_matrix(dt, self.radial_frequency)
-        A = np.exp(-dt * lam) * np.block([
-            [0.5*(2. + dt*lam*(2. + dt*lam)) * R, dt * (1. + dt * lam) * R,        0.5 * dt**2 * R],
-            [-0.5*dt ** 2 * lam**3 * R,           (1. + dt*lam*(1. - dt*lam)) * R, -0.5 * dt * (-2. + dt * lam) * R],
-            [0.5*dt*lam**3 * (-2. + dt*lam) * R,  dt * lam**2*(-3. + dt*lam) * R,  0.5*(2. + dt*lam*(-4. + dt*lam)) * R]
-        ])
+        A = np.exp(-dt * lam) * np.block(
+            [
+                [
+                    0.5 * (2.0 + dt * lam * (2.0 + dt * lam)) * R,
+                    dt * (1.0 + dt * lam) * R,
+                    0.5 * dt**2 * R,
+                ],
+                [
+                    -0.5 * dt**2 * lam**3 * R,
+                    (1.0 + dt * lam * (1.0 - dt * lam)) * R,
+                    -0.5 * dt * (-2.0 + dt * lam) * R,
+                ],
+                [
+                    0.5 * dt * lam**3 * (-2.0 + dt * lam) * R,
+                    dt * lam**2 * (-3.0 + dt * lam) * R,
+                    0.5 * (2.0 + dt * lam * (-4.0 + dt * lam)) * R,
+                ],
+            ]
+        )
         return A
 
     def feedback_matrix(self):
-        lam = 5.0 ** 0.5 / self.lengthscale
-        F_mat = np.array([[0.0, 1.0, 0.0],
-                          [0.0, 0.0, 1.0],
-                          [-lam ** 3.0, -3.0 * lam ** 2.0, -3.0 * lam]])
-        F_cos = np.array([[0.0, -self.radial_frequency],
-                          [self.radial_frequency, 0.0]])
+        lam = 5.0**0.5 / self.lengthscale
+        F_mat = np.array(
+            [
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [-(lam**3.0), -3.0 * lam**2.0, -3.0 * lam],
+            ]
+        )
+        F_cos = np.array([[0.0, -self.radial_frequency], [self.radial_frequency, 0.0]])
         # F = (0   -ω   1    0    0   0
         #      ω    0   0    1    0   0
         #      0    0   0   -ω    1   0
@@ -1456,32 +1740,45 @@ class Periodic(Kernel):
     a sum of cosines.
     TODO: allow for orders other than 6
     """
-    def __init__(self, variance=1.0, lengthscale=1.0, period=1.0, order=6, fix_variance=False):
-        self.transformed_lengthscale = objax.TrainVar(np.array(softplus_inv(lengthscale)))
+
+    def __init__(
+        self, variance=1.0, lengthscale=1.0, period=1.0, order=6, fix_variance=False
+    ):
+        self.transformed_lengthscale = objax.TrainVar(
+            np.array(softplus_inv(lengthscale))
+        )
         if fix_variance:
             self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
         else:
             self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
         self.transformed_period = objax.TrainVar(np.array(softplus_inv(period)))
         super().__init__()
-        self.name = 'Periodic'
+        self.name = "Periodic"
         self.order = order
         self.M = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[1]
-        factorial_mesh_M = np.array([[1., 1., 1., 1., 1., 1., 1.],
-                                     [1., 1., 1., 1., 1., 1., 1.],
-                                     [2., 2., 2., 2., 2., 2., 2.],
-                                     [6., 6., 6., 6., 6., 6., 6.],
-                                     [24., 24., 24., 24., 24., 24., 24.],
-                                     [120., 120., 120., 120., 120., 120., 120.],
-                                     [720., 720., 720., 720., 720., 720., 720.]])
-        b = np.array([[1., 0., 0., 0., 0., 0., 0.],
-                      [0., 2., 0., 0., 0., 0., 0.],
-                      [2., 0., 2., 0., 0., 0., 0.],
-                      [0., 6., 0., 2., 0., 0., 0.],
-                      [6., 0., 8., 0., 2., 0., 0.],
-                      [0., 20., 0., 10., 0., 2., 0.],
-                      [20., 0., 30., 0., 12., 0., 2.]])
-        self.b_fmK_2M = b * (1. / factorial_mesh_M) * (2. ** -self.M)
+        factorial_mesh_M = np.array(
+            [
+                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                [2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0],
+                [6.0, 6.0, 6.0, 6.0, 6.0, 6.0, 6.0],
+                [24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0],
+                [120.0, 120.0, 120.0, 120.0, 120.0, 120.0, 120.0],
+                [720.0, 720.0, 720.0, 720.0, 720.0, 720.0, 720.0],
+            ]
+        )
+        b = np.array(
+            [
+                [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 6.0, 0.0, 2.0, 0.0, 0.0, 0.0],
+                [6.0, 0.0, 8.0, 0.0, 2.0, 0.0, 0.0],
+                [0.0, 20.0, 0.0, 10.0, 0.0, 2.0, 0.0],
+                [20.0, 0.0, 30.0, 0.0, 12.0, 0.0, 2.0],
+            ]
+        )
+        self.b_fmK_2M = b * (1.0 / factorial_mesh_M) * (2.0**-self.M)
 
     @property
     def variance(self):
@@ -1496,26 +1793,38 @@ class Periodic(Kernel):
         return softplus(self.transformed_period.value)
 
     def kernel_to_state_space(self, R=None):
-        a = self.b_fmK_2M * self.lengthscale ** (-2. * self.M) * np.exp(-1. / self.lengthscale ** 2.) * self.variance
+        a = (
+            self.b_fmK_2M
+            * self.lengthscale ** (-2.0 * self.M)
+            * np.exp(-1.0 / self.lengthscale**2.0)
+            * self.variance
+        )
         q2 = np.sum(a, axis=0)
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
-        F = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        F = np.kron(
+            np.diag(np.arange(self.order + 1)), np.array([[0.0, -omega], [omega, 0.0]])
+        )
         L = np.eye(2 * (self.order + 1))
         Qc = np.zeros(2 * (self.order + 1))
         Pinf = np.kron(np.diag(q2), np.eye(2))
-        H = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        H = np.kron(np.ones([1, self.order + 1]), np.array([1.0, 0.0]))
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        a = self.b_fmK_2M * self.lengthscale ** (-2. * self.M) * np.exp(-1. / self.lengthscale ** 2.) * self.variance
+        a = (
+            self.b_fmK_2M
+            * self.lengthscale ** (-2.0 * self.M)
+            * np.exp(-1.0 / self.lengthscale**2.0)
+            * self.variance
+        )
         q2 = np.sum(a, axis=0)
         Pinf = np.kron(np.diag(q2), np.eye(2))
         return Pinf
 
     def measurement_model(self):
-        H = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        H = np.kron(np.ones([1, self.order + 1]), np.array([1.0, 0.0]))
         return H
 
     def state_transition(self, dt):
@@ -1534,22 +1843,26 @@ class Periodic(Kernel):
         R4 = rotation_matrix(dt, harmonics[4])
         R5 = rotation_matrix(dt, harmonics[5])
         R6 = rotation_matrix(dt, harmonics[6])
-        A = np.block([
-            [R0, np.zeros([2, 12])],
-            [np.zeros([2, 2]),  R1, np.zeros([2, 10])],
-            [np.zeros([2, 4]),  R2, np.zeros([2, 8])],
-            [np.zeros([2, 6]),  R3, np.zeros([2, 6])],
-            [np.zeros([2, 8]),  R4, np.zeros([2, 4])],
-            [np.zeros([2, 10]), R5, np.zeros([2, 2])],
-            [np.zeros([2, 12]), R6]
-        ])
+        A = np.block(
+            [
+                [R0, np.zeros([2, 12])],
+                [np.zeros([2, 2]), R1, np.zeros([2, 10])],
+                [np.zeros([2, 4]), R2, np.zeros([2, 8])],
+                [np.zeros([2, 6]), R3, np.zeros([2, 6])],
+                [np.zeros([2, 8]), R4, np.zeros([2, 4])],
+                [np.zeros([2, 10]), R5, np.zeros([2, 2])],
+                [np.zeros([2, 12]), R6],
+            ]
+        )
         return A
 
     def feedback_matrix(self):
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
-        F = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        F = np.kron(
+            np.diag(np.arange(self.order + 1)), np.array([[0.0, -omega], [omega, 0.0]])
+        )
         return F
 
 
@@ -1559,21 +1872,22 @@ class Independent(Kernel):
     the state space models such that each component is fed to the likelihood.
     This class differs from Sum only in the measurement model.
     """
+
     def __init__(self, kernels):
         self.num_kernels = len(kernels)
         for i in range(self.num_kernels):
             selfdotkerneli = "self.kernel" + str(i)
             exec(selfdotkerneli + " = kernels[i]")
-        self.name = 'Independent'
+        self.name = "Independent"
 
     def K(self, X, X2):
         zeros = np.zeros(self.num_kernels)
         K0 = self.kernel0.K(X, X2)
-        index_vector = index_add(zeros, index[0], 1.)
+        index_vector = index_add(zeros, index[0], 1.0)
         Kstack = np.kron(K0, np.diag(index_vector))
         for i in range(1, self.num_kernels):
             kerneli = eval("self.kernel" + str(i))
-            index_vector = index_add(zeros, index[i], 1.)
+            index_vector = index_add(zeros, index[i], 1.0)
             Kstack += np.kron(kerneli.K(X, X2), np.diag(index_vector))
         return Kstack
 
@@ -1609,7 +1923,7 @@ class Independent(Kernel):
         """
         Stationary covariance as a tensor of blocks, as required when using a mean-field assumption
         """
-        raise NotImplementedError('blocks are not all the same shape')
+        raise NotImplementedError("blocks are not all the same shape")
         # Pinf = self.kernel0.stationary_covariance()[None]
         # for i in range(1, self.num_kernels):
         #     kerneli = eval("self.kernel" + str(i))
@@ -1645,7 +1959,7 @@ class Independent(Kernel):
         :param dt: step size(s), Δtₙ = tₙ - tₙ₋₁ [scalar]
         :return: state transition matrix A
         """
-        raise NotImplementedError('blocks are not all the same shape')
+        raise NotImplementedError("blocks are not all the same shape")
         # A = self.kernel0.state_transition(dt)[None]
         # for i in range(1, self.num_kernels):
         #     kerneli = eval("self.kernel" + str(i))
@@ -1654,7 +1968,7 @@ class Independent(Kernel):
         # return A
 
     def get_meanfield_block_index(self):
-        raise NotImplementedError('blocks are not all the same shape')
+        raise NotImplementedError("blocks are not all the same shape")
         # Pinf = self.stationary_covariance_meanfield()
         # num_latents = Pinf.shape[0]
         # sub_state_dim = Pinf.shape[1]
@@ -1684,9 +1998,10 @@ class Sum(Independent):
     the state space models to produce their sum.
     This class differs from Independent only in the measurement model.
     """
+
     def __init__(self, kernels):
         super().__init__(kernels=kernels)
-        self.name = 'Sum'
+        self.name = "Sum"
 
     def K(self, X, X2):
         Ksum = self.kernel0.K(X, X2)
@@ -1703,9 +2018,7 @@ class Sum(Independent):
             F = block_diag(F, F_)
             L = block_diag(L, L_)
             Qc = block_diag(Qc, Qc_)
-            H = np.block([
-                H, H_
-            ])
+            H = np.block([H, H_])
             Pinf = block_diag(Pinf, Pinf_)
         return F, L, Qc, H, Pinf
 
@@ -1714,9 +2027,7 @@ class Sum(Independent):
         for i in range(1, self.num_kernels):
             kerneli = eval("self.kernel" + str(i))
             H_ = kerneli.measurement_model()
-            H = np.block([
-                H, H_
-            ])
+            H = np.block([H, H_])
         return H
 
 
@@ -1728,15 +2039,16 @@ class Separable(Independent):
     TODO: this assumes that each kernel acts on a different dimension. Generalise.
     TODO: implement state space form of product kernels
     """
+
     def __init__(self, kernels):
         super().__init__(kernels=kernels)
-        self.name = 'Product'
+        self.name = "Product"
 
     def K(self, X, X2):
         Kprod = self.kernel0.K(X[:, :1], X2[:, :1])
         for i in range(1, self.num_kernels):
             kerneli = eval("self.kernel" + str(i))
-            Kprod = Kprod * kerneli.K(X[:, i:i+1], X2[:, i:i+1])
+            Kprod = Kprod * kerneli.K(X[:, i : i + 1], X2[:, i : i + 1])
         return Kprod
 
     # def measurement_model(self):
@@ -1751,38 +2063,49 @@ class Separable(Independent):
 
 
 class SpectroTemporal(Independent):
-
-    def __init__(self,
-                 subband_lengthscales,
-                 subband_frequencies,
-                 modulator_variances,
-                 modulator_lengthscales,
-                 subband_kernel=SubbandMatern12,
-                 modulator_kernel=Matern32):
+    def __init__(
+        self,
+        subband_lengthscales,
+        subband_frequencies,
+        modulator_variances,
+        modulator_lengthscales,
+        subband_kernel=SubbandMatern12,
+        modulator_kernel=Matern32,
+    ):
         assert len(subband_lengthscales) == len(subband_frequencies)
         assert len(modulator_lengthscales) == len(modulator_variances)
         num_subbands = len(subband_frequencies)
         num_modulators = len(modulator_lengthscales)
         radial_freq = 2 * np.pi * subband_frequencies  # radial freq = 2pi * f
-        kernels = [subband_kernel(variance=1, lengthscale=subband_lengthscales[0], radial_frequency=radial_freq[0],
-                                  fix_variance=True)]
+        kernels = [
+            subband_kernel(
+                variance=1,
+                lengthscale=subband_lengthscales[0],
+                radial_frequency=radial_freq[0],
+                fix_variance=True,
+            )
+        ]
         for i in range(1, num_subbands):
             kernels.append(
-                subband_kernel(variance=1, lengthscale=subband_lengthscales[i], radial_frequency=radial_freq[i],
-                               fix_variance=True)
+                subband_kernel(
+                    variance=1,
+                    lengthscale=subband_lengthscales[i],
+                    radial_frequency=radial_freq[i],
+                    fix_variance=True,
+                )
             )
         for j in range(num_modulators):
             kernels.append(
-                modulator_kernel(variance=modulator_variances[j], lengthscale=modulator_lengthscales[j])
+                modulator_kernel(
+                    variance=modulator_variances[j],
+                    lengthscale=modulator_lengthscales[j],
+                )
             )
         super().__init__(kernels=kernels)
 
 
 class LatentExponentiallyGenerated(Kernel):
-
-    def __init__(self,
-                 N,
-                 R):
+    def __init__(self, N, R):
         assert N.shape == R.shape
         self.N_ = objax.StateVar(np.array(N))
         self.R_ = objax.StateVar(np.array(R))
@@ -1798,10 +2121,9 @@ class LatentExponentiallyGenerated(Kernel):
     def kernel_to_state_space(self, R=None):
         F = -0.5 * (self.N @ self.N.T + self.R - self.R.T)
         L = self.N
-        Qc = np.array([[1.]])
+        Qc = np.array([[1.0]])
         H = np.concatenate(
-            [np.array([[1.0]]), np.zeros([1, self.N.shape[0] - 1])],
-            axis=1
+            [np.array([[1.0]]), np.zeros([1, self.N.shape[0] - 1])], axis=1
         )
         Pinf = np.eye(self.N.shape[0])
         return F, L, Qc, H, Pinf
@@ -1812,8 +2134,7 @@ class LatentExponentiallyGenerated(Kernel):
 
     def measurement_model(self):
         H = np.concatenate(
-            [np.array([[1.0]]), np.zeros([1, self.N.shape[0] - 1])],
-            axis=1
+            [np.array([[1.0]]), np.zeros([1, self.N.shape[0] - 1])], axis=1
         )
         return H
 
