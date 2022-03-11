@@ -32,7 +32,7 @@ np.random.seed(12345)
 x_plot = np.linspace(xlim[0], xlim[1], 200)[:, None]
 
 var_f = 1.0  # GP variance
-len_f = 50  # GP lengthscale
+len_f = 40  # GP lengthscale
 var_y = 0.5  # observation noise
 
 kern = bayesnewton.kernels.SquaredExponential(variance=var_f, lengthscale=len_f)
