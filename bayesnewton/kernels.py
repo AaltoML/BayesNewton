@@ -3,7 +3,7 @@ from jax import vmap
 import jax.numpy as np
 from jax.scipy.linalg import cho_factor, cho_solve, block_diag, expm
 from jax.ops import index_add, index
-from .utils import scaled_squared_euclid_dist, softplus, softplus_inv, rotation_matrix
+from .utils import square_distance, scaled_squared_euclid_dist, softplus, softplus_inv, rotation_matrix
 from warnings import warn
 
 
@@ -1013,7 +1013,11 @@ class QuasiPeriodicMatern12(Kernel):
         return softplus(self.transformed_period.value)
 
     def K(self, X, X2):
-        raise NotImplementedError
+        r_per = np.pi * np.sqrt(np.maximum(square_distance(X, X2), 1e-36)) / self.period
+        k_per = np.exp(-0.5 * np.square(np.sin(r_per) / self.lengthscale_periodic))
+        r_mat = np.sqrt(np.maximum(scaled_squared_euclid_dist(X, X2, self.lengthscale_matern), 1e-36))
+        k_mat12 = np.exp(-r_mat)
+        return self.variance * k_mat12 * k_per
 
     def kernel_to_state_space(self, R=None):
         var_p = 1.0
@@ -1193,7 +1197,12 @@ class QuasiPeriodicMatern32(Kernel):
         return softplus(self.transformed_period.value)
 
     def K(self, X, X2):
-        raise NotImplementedError
+        r_per = np.pi * np.sqrt(np.maximum(square_distance(X, X2), 1e-36)) / self.period
+        k_per = np.exp(-0.5 * np.square(np.sin(r_per) / self.lengthscale_periodic))
+        sqrt3 = np.sqrt(3.0)
+        r_mat = np.sqrt(np.maximum(scaled_squared_euclid_dist(X, X2, self.lengthscale_matern), 1e-36))
+        k_mat32 = (1.0 + sqrt3 * r_mat) * np.exp(-sqrt3 * r_mat)
+        return self.variance * k_mat32 * k_per
 
     def kernel_to_state_space(self, R=None):
         var_p = 1.0
