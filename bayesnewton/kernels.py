@@ -1091,7 +1091,7 @@ class QuasiPeriodicMatern12(Kernel):
     def state_transition(self, dt):
         """
         Calculation of the closed form discrete-time state
-        transition matrix A = expm(FΔt) for the Quasi-Periodic Matern-3/2 prior
+        transition matrix A = expm(FΔt) for the Quasi-Periodic Matern-1/2 prior
         :param dt: step size(s), Δt = tₙ - tₙ₋₁ [M+1, 1]
         :return: state transition matrix A [M+1, D, D]
         """
