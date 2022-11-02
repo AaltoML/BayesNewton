@@ -757,7 +757,7 @@ class MarkovGaussianProcess(BaseModel):
 
         # if np.squeeze(test_var).ndim > 2:  # deal with spatio-temporal case (discard spatial covariance)
         if self.spatio_temporal:  # deal with spatio-temporal case (discard spatial covariance)
-            test_var = diag(np.squeeze(test_var))
+            test_var = diag(test_var)
         return np.squeeze(test_mean), np.squeeze(test_var)
 
     def filter_energy(self):
