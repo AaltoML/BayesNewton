@@ -414,17 +414,21 @@ class SparseGaussianProcess(GaussianProcess):
         )
 
     def compute_global_pseudo_lik(self):
+        nat1lik_global, nat2lik_global = self.compute_global_pseudo_nat()
+        pseudo_var_global = inv(nat2lik_global + 1e-12 * np.eye(nat2lik_global.shape[0]))
+        pseudo_y_global = pseudo_var_global @ nat1lik_global
+        return pseudo_y_global, pseudo_var_global
+
+    def compute_global_pseudo_nat(self):
         """ The pseudo-likelihoods are currently stored as N Gaussians in f """
         Kuf = self.kernel(self.Z.value, self.X)  # only compute log lik for observed values
         Kuu = self.kernel(self.Z.value, self.Z.value)
         Wuf = solve(Kuu, Kuf)  # conditional mapping, Kuu^-1 Kuf
 
-        nat1lik_full = Wuf @ self.pseudo_likelihood.nat1.reshape(-1, 1)
+        nat1lik_global = Wuf @ self.pseudo_likelihood.nat1.reshape(-1, 1)
         nat2lik_block_diag = blocktensor_to_blockdiagmatrix(self.pseudo_likelihood.nat2)  # multi-latent version
-        nat2lik_full = Wuf @ nat2lik_block_diag @ transpose(Wuf)
-        pseudo_var_full = inv(nat2lik_full + 1e-12 * np.eye(Kuu.shape[0]))
-        pseudo_y_full = pseudo_var_full @ nat1lik_full
-        return pseudo_y_full, pseudo_var_full
+        nat2lik_global = Wuf @ nat2lik_block_diag @ transpose(Wuf)
+        return nat1lik_global, nat2lik_global
 
     def compute_full_pseudo_lik(self, batch_ind=None):
         nat1lik_full, nat2lik_full = self.compute_full_pseudo_nat(batch_ind)

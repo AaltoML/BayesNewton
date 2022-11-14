@@ -5,13 +5,14 @@ from jax.ops import index_update, index
 from .utils import (
     diag,
     transpose,
-    # inv,
+    inv,
     inv_vmap,
     vmap_diag,
     solve,
     ensure_diagonal_positive_precision,
     mvn_logpdf,
     pep_constant,
+    compute_cavity,
 )
 from .likelihoods import Likelihood, MultiLatentLikelihood
 from .basemodels import GaussianDistribution, SparseGP
@@ -183,8 +184,8 @@ class VariationalInference(InferenceMixin):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        # VI expected density is E_q[log p(y|f)]
-        expected_density, dE_dm, d2E_dm2 = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+        # VI expected density is expected log-likelihood: E_q[log p(y|f)]
+        ell, dell_dm, d2ell_dm2 = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -192,9 +193,9 @@ class VariationalInference(InferenceMixin):
         )
 
         if ensure_psd:
-            d2E_dm2 = -ensure_diagonal_positive_precision(-d2E_dm2)  # manual fix to avoid non-PSD precision
+            d2ell_dm2 = -ensure_diagonal_positive_precision(-d2ell_dm2)  # manual fix to avoid non-PSD precision
 
-        jacobian, hessian = self.conditional_data_to_posterior(dE_dm, d2E_dm2)
+        jacobian, hessian = self.conditional_data_to_posterior(dell_dm, d2ell_dm2)
 
         if mean_f.shape[1] == jacobian.shape[1]:
             return mean_f, jacobian, hessian
@@ -213,8 +214,8 @@ class VariationalInference(InferenceMixin):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        # VI expected density is E_q[log p(y|f)]
-        expected_density, _, _ = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+        # VI expected density is expected log-likelihood: E_q[log p(y|f)]
+        ell, _, _ = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -223,7 +224,7 @@ class VariationalInference(InferenceMixin):
 
         KL = self.compute_kl()  # KL[q(f)|p(f)]
         variational_free_energy = -(  # the variational free energy, i.e., the negative ELBO
-            scale * np.nansum(expected_density)  # nansum accounts for missing data
+            scale * np.nansum(ell)  # nansum accounts for missing data
             - KL
         )
 
@@ -252,8 +253,8 @@ class ExpectationPropagation(InferenceMixin):
         cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(batch_ind, cavity_mean, cavity_cov)
 
         # calculate log marginal likelihood and the new sites via moment matching:
-        # EP expected density is log E_q[p(y|f)]
-        lZ, dlZ, d2lZ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+        # EP expected density is the log expected likelihood: log E_q[p(y|f)]
+        lel, dlel, d2lel = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f,
             cav_cov_f,
@@ -262,21 +263,21 @@ class ExpectationPropagation(InferenceMixin):
         )
 
         cav_prec = inv_vmap(cav_cov_f)
-        scale_factor = cav_prec @ inv_vmap(d2lZ + cav_prec) / self.power  # this form guarantees symmetry
+        scale_factor = cav_prec @ inv_vmap(d2lel + cav_prec) / self.power  # this form guarantees symmetry
 
-        dlZ = scale_factor @ dlZ
-        d2lZ = scale_factor @ d2lZ
+        dlel = scale_factor @ dlel
+        d2lel = scale_factor @ d2lel
         if self.mask_pseudo_y is not None:
             # apply mask
             mask = self.mask_pseudo_y[batch_ind][..., None]
-            dlZ = np.where(mask, np.nan, dlZ)
-            d2lZ_masked = np.where(mask + transpose(mask), 0., d2lZ)  # ensure masked entries are independent
-            d2lZ = np.where(diag(mask)[..., None], np.nan, d2lZ_masked)  # ensure masked entries return log like of 0
+            dlel = np.where(mask, np.nan, dlel)
+            d2lZ_masked = np.where(mask + transpose(mask), 0., d2lel)  # ensure masked entries are independent
+            d2lel = np.where(diag(mask)[..., None], np.nan, d2lZ_masked)  # ensure masked entries return log like of 0
 
         if ensure_psd:
-            d2lZ = -ensure_diagonal_positive_precision(-d2lZ)  # manual fix to avoid non-PSD precision
+            d2lel = -ensure_diagonal_positive_precision(-d2lel)  # manual fix to avoid non-PSD precision
 
-        jacobian, hessian = self.conditional_data_to_posterior(dlZ, d2lZ)
+        jacobian, hessian = self.conditional_data_to_posterior(dlel, d2lel)
 
         if cav_mean_f.shape[1] == jacobian.shape[1]:
             return cav_mean_f, jacobian, hessian
@@ -286,7 +287,6 @@ class ExpectationPropagation(InferenceMixin):
 
     def energy(self, batch_ind=None, cubature=None, **kwargs):
         """
-        TODO: the energy is incorrect for SparseGP
         """
         if batch_ind is None:
             batch_ind = np.arange(self.num_data)
@@ -298,9 +298,8 @@ class ExpectationPropagation(InferenceMixin):
         cavity_mean, cavity_cov = self.cavity_distribution(None, self.power)  # TODO: check batch_ind is not required
         cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(None, cavity_mean, cavity_cov)
 
-        # calculate log marginal likelihood and the new sites via moment matching:
-        # EP expected density is log E_q[p(y|f)]
-        lZ, _, _ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+        # EP expected density is log expected likelihood: log E_q[p(y|f)]
+        lel, _, _ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f[batch_ind],
             cav_cov_f[batch_ind],
@@ -311,42 +310,44 @@ class ExpectationPropagation(InferenceMixin):
         if self.mask_y is not None:
             # TODO: this assumes masking is implemented in MultiLatentLikelihood - generalise
             if not isinstance(self.likelihood, MultiLatentLikelihood):
-                if np.squeeze(self.mask_y[batch_ind]).ndim != np.squeeze(lZ).ndim:
+                if np.squeeze(self.mask_y[batch_ind]).ndim != np.squeeze(lel).ndim:
                     raise NotImplementedError('masking in spatio-temporal models not implemented for EP')
-                lZ = np.where(np.squeeze(self.mask_y[batch_ind]), 0., np.squeeze(lZ))  # apply mask
-
-        pseudo_y, pseudo_var = self.compute_full_pseudo_lik()
-        # TODO: this is the term which is incorrect for SparseGP:
-        lZ_pseudo = mvn_logpdf_(
-            pseudo_y,
-            cavity_mean,
-            pseudo_var / self.power + cavity_cov,
-            self.mask_pseudo_y
-        )
-        constant = vmap(pep_constant, [0, None, 0])(pseudo_var, self.power, self.mask_pseudo_y)  # PEP constant
-
-
-        # lZ_pseudo = mvn_logpdf_(
-        #     self.pseudo_likelihood.mean,
-        #     cav_mean_f,
-        #     self.pseudo_likelihood.covariance / power + cav_cov_f,
-        #     self.mask_pseudo_y
-        # )
-        # constant = vmap(pep_constant, [0, None, 0])(self.pseudo_likelihood.covariance, power, self.mask_pseudo_y)  # PEP constant
-
-
-        lZ_pseudo += constant
+                lel = np.where(np.squeeze(self.mask_y[batch_ind]), 0., np.squeeze(lel))  # apply mask
 
         if isinstance(self, SparseGP):
-            warnings.warn('Sparse EP energy is not correct')
-            pseudo_y_full, pseudo_var_full = self.compute_global_pseudo_lik()
-            lZ_post = self.compute_log_lik(pseudo_y_full, pseudo_var_full)
+            nat1lik, nat2lik = self.compute_global_pseudo_nat()
+            pseudo_var = inv(nat2lik + 1e-12 * np.eye(nat2lik.shape[0]))
+            pseudo_y = pseudo_var @ nat1lik
+            # compute the "global" cavity (equals the prior when power=1)
+            global_cavity_mean, global_cavity_cov = compute_cavity(
+                self.posterior_mean.value.reshape(-1, 1),
+                self.posterior_covariance.value,
+                nat1lik,
+                nat2lik,
+                self.power
+            )
+            # lel_pseudo = log E_qcav[t^power(u)], where t(u) is global approx likelihood and qcav is global cavity
+            lel_pseudo = mvn_logpdf(
+                pseudo_y,
+                global_cavity_mean,
+                pseudo_var / self.power + global_cavity_cov
+            )
+            lel_pseudo += pep_constant(pseudo_var, self.power)  # PEP constant
         else:
-            lZ_post = self.compute_log_lik(pseudo_y, pseudo_var)
+            pseudo_y, pseudo_var = self.compute_full_pseudo_lik()
+            lel_pseudo = mvn_logpdf_(
+                pseudo_y,
+                cavity_mean,
+                pseudo_var / self.power + cavity_cov,
+                self.mask_pseudo_y
+            )
+            lel_pseudo += vmap(pep_constant, [0, None, 0])(pseudo_var, self.power, self.mask_pseudo_y)  # PEP constant
+
+        lZ = self.compute_log_lik(pseudo_y, pseudo_var)
 
         ep_energy = -(
-            lZ_post
-            + 1. / self.power * (scale * np.nansum(lZ) - np.nansum(lZ_pseudo))
+            lZ
+            + 1. / self.power * (scale * np.nansum(lel) - np.nansum(lel_pseudo))
         )
 
         return ep_energy
