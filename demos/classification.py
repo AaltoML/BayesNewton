@@ -7,6 +7,7 @@ import time
 np.random.seed(99)
 N = 500  # number of training points
 M = 20
+Nbatch = 100
 # x = 100 * np.random.rand(N)
 x0 = 40 * np.random.rand(N//2)
 x1 = 40 * np.random.rand(N//2) + 60
@@ -32,11 +33,14 @@ kern = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = bayesnewton.likelihoods.Bernoulli(link='logit')
 
 # model = bayesnewton.models.VariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.ExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
+# model = bayesnewton.models.SparseVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+model = bayesnewton.models.SparseExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, power=0.5)
 # model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovVariationalGaussNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y, damped=True)
-model = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovExpectationPropagationQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
 # model = bayesnewton.models.MarkovExpectationPropagationRiemannGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y)
@@ -47,7 +51,7 @@ model = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihoo
 # model = bayesnewton.models.MarkovTaylorNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.InfiniteHorizonVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.SparseInfiniteHorizonExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 
 lr_adam = 0.05
 lr_newton = 1
@@ -57,9 +61,9 @@ energy = objax.GradValues(model.energy, model.vars())
 
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
-def train_op():
-    model.inference(lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy()  # compute energy and its gradients w.r.t. hypers
+def train_op(ind):
+    model.inference(batch_ind=ind, lr=lr_newton)  # perform inference and update variational params
+    dE, E = energy(batch_ind=ind)  # compute energy and its gradients w.r.t. hypers
     opt_hypers(lr_adam, dE)
     return E
 
@@ -68,7 +72,8 @@ train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    loss = train_op()
+    batch_ind = np.random.permutation(N)[:Nbatch]
+    loss = train_op(batch_ind)
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))

@@ -21,7 +21,10 @@ from .utils import (
     temporal_conditional_infinite_horizon,
     sum_natural_params_by_group,
     gaussian_expected_log_lik,
-    compute_cavity
+    compute_cavity,
+    mvn_logpdf,
+    mvn_logpdf_,
+    pep_constant
 )
 from .ops import (
     gaussian_conditional,
@@ -241,6 +244,23 @@ class BaseModel(objax.Module):
             power
         )
         return cavity_mean, cavity_cov
+
+    def compute_ep_energy_terms(self, batch_ind=None, power=1.):
+        if batch_ind is None:
+            batch_ind = np.arange(self.num_data)
+        cavity_mean, cavity_cov = self.cavity_distribution(batch_ind, power)
+        pseudo_y, pseudo_var = self.compute_full_pseudo_lik()
+
+        lel_pseudo = mvn_logpdf_(
+            pseudo_y,
+            cavity_mean,
+            pseudo_var / power + cavity_cov,
+            self.mask_pseudo_y
+        )
+        lel_pseudo += vmap(pep_constant, [0, None, 0])(pseudo_var, power, self.mask_pseudo_y)  # PEP constant
+
+        lZ = self.compute_log_lik(pseudo_y, pseudo_var)
+        return (cavity_mean, cavity_cov), lel_pseudo, lZ
 
 
 class GaussianProcess(BaseModel):
@@ -548,24 +568,56 @@ class SparseGaussianProcess(GaussianProcess):
         return cavity_mean, cavity_cov
 
     def cavity_distribution_tied(self, batch_ind=None, power=1.):
-        """ Just a placeholder. Full tied algorithm should store the tied site. """
+        """ The "tied" version rather than the more accurate but much slower cavity computation above """
         if batch_ind is None:
             batch_ind = np.arange(self.num_data)
+        N = batch_ind.shape[0]
+        # Kuf = self.kernel(self.Z.value, self.X)  # only compute log lik for observed values
+        # Kuu = self.kernel(self.Z.value, self.Z.value)
+        # Wuf = solve(Kuu, Kuf)  # conditional mapping, Kuu^-1 Kuf
+        #
+        # nat1lik_full = Wuf @ np.squeeze(self.pseudo_likelihood.nat1, axis=-1)
+        # nat2lik_full = Wuf @ np.diag(np.squeeze(self.pseudo_likelihood.nat2)) @ transpose(Wuf)
+        #
+        # nat1cav = nat1lik_full * (self.num_inducing - power) / self.num_inducing
+        # nat2cav = nat2lik_full * (self.num_inducing - power) / self.num_inducing
+        #
+        # cavity_cov = inv(nat2cav + 1e-12 * np.eye(Kuu.shape[0]))
+        # cavity_mean = cavity_cov @ nat1cav
+        nat1lik, nat2lik = self.compute_global_pseudo_nat()
+        cavity_mean, cavity_cov = compute_cavity(
+            self.posterior_mean.value.reshape(-1, 1),
+            self.posterior_covariance.value,
+            nat1lik,
+            nat2lik,
+            power / N
+        )
+        return np.tile(cavity_mean, [N, 1, 1]), np.tile(cavity_cov, [N, 1, 1])
 
-        Kuf = self.kernel(self.Z.value, self.X)  # only compute log lik for observed values
-        Kuu = self.kernel(self.Z.value, self.Z.value)
-        Wuf = solve(Kuu, Kuf)  # conditional mapping, Kuu^-1 Kuf
+    def compute_ep_energy_terms(self, batch_ind=None, power=1.):
+        """ Here we use the "tied" version rather than the full cavity computation """
+        if batch_ind is None:
+            batch_ind = np.arange(self.num_data)
+        N = batch_ind.shape[0]
+        nat1lik, nat2lik = self.compute_global_pseudo_nat()
+        pseudo_var = inv(nat2lik + 1e-12 * np.eye(nat2lik.shape[0]))
+        pseudo_y = pseudo_var @ nat1lik
 
-        nat1lik_full = Wuf @ np.squeeze(self.pseudo_likelihood.nat1, axis=-1)
-        nat2lik_full = Wuf @ np.diag(np.squeeze(self.pseudo_likelihood.nat2)) @ transpose(Wuf)
+        post_nat2 = inv(self.posterior_covariance.value + 1e-8 * np.eye(self.posterior_covariance.value.shape[1]))
+        post_nat1 = post_nat2 @ self.posterior_mean.value.reshape(-1, 1)
+        global_cavity_cov = inv(post_nat2 - power * nat2lik)
+        local_cavity_cov = inv(post_nat2 - power / N * nat2lik)
+        global_cavity_mean = global_cavity_cov @ (post_nat1 - power * nat1lik)
+        local_cavity_mean = local_cavity_cov @ (post_nat1 - power / N * nat1lik)
 
-        nat1cav = nat1lik_full * (self.num_inducing - power) / self.num_inducing
-        nat2cav = nat2lik_full * (self.num_inducing - power) / self.num_inducing
-
-        cavity_cov = inv(nat2cav + 1e-12 * np.eye(Kuu.shape[0]))
-        cavity_mean = cavity_cov @ nat1cav
-
-        return np.tile(cavity_mean, [batch_ind.shape[0], 1, 1]), np.tile(cavity_cov, [batch_ind.shape[0], 1, 1])
+        lel_pseudo = mvn_logpdf(
+            pseudo_y,
+            global_cavity_mean,
+            pseudo_var / power + global_cavity_cov
+        )
+        lel_pseudo += pep_constant(pseudo_var, power)  # add PEP constant to account for power in normaliser
+        lZ = self.compute_log_lik(pseudo_y, pseudo_var)
+        return (np.tile(local_cavity_mean, [N, 1, 1]), np.tile(local_cavity_cov, [N, 1, 1])), lel_pseudo, lZ
 
 
 SparseGP = SparseGaussianProcess
@@ -752,7 +804,7 @@ class MarkovGaussianProcess(BaseModel):
         H = self.kernel.measurement_model()
         if self.spatio_temporal:
             # TODO: if R is fixed, only compute B, C once
-            B, C = self.kernel.spatial_conditional(X, R, predict=True)
+            B, C = self.kernel.spatial_conditional(X, R)
             W = B @ H
             test_mean = W @ state_mean
             test_var = W @ state_cov @ transpose(W) + C
@@ -791,8 +843,7 @@ class MarkovGaussianProcess(BaseModel):
         if X is None:
             dt = self.dt
         else:
-            x_time = X if X.ndim < 2 else X[:, 0]
-            dt = np.concatenate([np.array([0.0]), np.diff(np.sort(x_time))])
+            dt = np.concatenate([np.array([0.0]), np.diff(np.sort(X))])
         sd = self.state_dim
         H = self.kernel.measurement_model()
         Pinf = self.kernel.stationary_covariance()
@@ -828,9 +879,8 @@ class MarkovGaussianProcess(BaseModel):
 
         return f_samples
 
-    def posterior_sample(self, X=None, R=None, num_samps=1, seed=0):
+    def posterior_sample(self, X=None, num_samps=1, seed=0):
         """
-        TODO: currently doesn't work for R != R_train
         Sample from the posterior at the test locations.
         Posterior sampling works by smoothing samples from the prior using the approximate Gaussian likelihood
         model given by the pseudo-likelihood, 𝓝(f|μ*,σ²*), computed during training.
@@ -847,36 +897,30 @@ class MarkovGaussianProcess(BaseModel):
             the posterior samples [N_test, num_samps]
         """
         if X is None:
-            x_time = None
             train_ind = np.arange(self.num_data)
             test_ind = train_ind
         else:
             if X.ndim < 2:
                 X = X[:, None]
-            x_time = np.concatenate([self.X[:, 0], X[:, 0]])
-            x_time, ind = np.unique(x_time, return_inverse=True)
+            X = np.concatenate([self.X, X])
+            X, ind = np.unique(X, return_inverse=True)
             train_ind, test_ind = ind[:self.num_data], ind[self.num_data:]
-        post_mean, _ = self.predict(X, R)
-        prior_samp = self.prior_sample(X=x_time, num_samps=num_samps, seed=seed)  # sample at all locations
+        post_mean, _ = self.predict(X)
+        prior_samp = self.prior_sample(X=X, num_samps=num_samps, seed=seed)  # sample at training locations
         lik_chol = np.tile(cholesky(self.pseudo_likelihood.covariance, lower=True), [num_samps, 1, 1, 1])
         gen = objax.random.Generator(seed)
         prior_samp_train = prior_samp[:, train_ind]
         prior_samp_y = prior_samp_train + lik_chol @ objax.random.normal(shape=prior_samp_train.shape, generator=gen)
 
         def smooth_prior_sample(i, prior_samp_y_i):
-            smoothed_sample, _ = self.predict(X, R, pseudo_lik_params=(prior_samp_y_i, self.pseudo_likelihood.covariance))
+            smoothed_sample, _ = self.predict(X, pseudo_lik_params=(prior_samp_y_i, self.pseudo_likelihood.covariance))
             return i+1, smoothed_sample
 
         _, smoothed_samples = scan(f=smooth_prior_sample,
                                    init=0,
                                    xs=prior_samp_y)
 
-        if self.spatio_temporal:
-            prior_samp_test = prior_samp[:, test_ind][..., 0]
-        else:
-            prior_samp_test = prior_samp[:, test_ind][..., 0, 0]
-        # TODO: if R != R_train, then prior_samp_test is at the wrong locations and this breaks. Fix.
-        return prior_samp_test - smoothed_samples + post_mean[None]
+        return (prior_samp[..., 0, 0] - smoothed_samples + post_mean[None])[:, test_ind]
 
 
 MarkovGP = MarkovGaussianProcess
@@ -1017,7 +1061,7 @@ class SparseMarkovGaussianProcess(MarkovGaussianProcess):
         H = self.kernel.measurement_model()
         if self.spatio_temporal:
             # TODO: if R is fixed, only compute B, C once
-            B, C = self.kernel.spatial_conditional(X, R, predict=True)
+            B, C = self.kernel.spatial_conditional(X, R)
             W = B @ H
             test_mean = W @ state_mean
             test_var = W @ state_cov @ transpose(W) + C
@@ -1025,8 +1069,7 @@ class SparseMarkovGaussianProcess(MarkovGaussianProcess):
             test_mean, test_var = H @ state_mean, H @ state_cov @ transpose(H)
 
         if np.squeeze(test_var).ndim > 2:  # deal with spatio-temporal case (discard spatial covariance)
-            if not isinstance(self.likelihood, MultiLatentLikelihood):
-                test_var = diag(np.squeeze(test_var))
+            test_var = diag(np.squeeze(test_var))
         return np.squeeze(test_mean), np.squeeze(test_var)
 
     def conditional_posterior_to_data(self, batch_ind=None, post_mean=None, post_cov=None):
@@ -1174,7 +1217,7 @@ class MarkovMeanFieldGaussianProcess(MarkovGaussianProcess):
         H = self.kernel.measurement_model()
         if self.spatio_temporal:
             # TODO: if R is fixed, only compute B, C once
-            B, C = self.kernel.spatial_conditional(X, R, predict=True)
+            B, C = self.kernel.spatial_conditional(X, R)
             W = B @ H
             test_mean = W @ state_mean
             test_var = W @ state_cov @ transpose(W) + C

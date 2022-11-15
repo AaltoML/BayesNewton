@@ -16,7 +16,8 @@ def wiggly_time_series(x_):
 
 
 np.random.seed(12345)
-N = 100
+N = 500
+Nbatch = 100
 x = np.linspace(-17, 147, num=N)
 y = wiggly_time_series(x)
 # x_test = np.linspace(np.min(x)-15.0, np.max(x)+15.0, num=500)
@@ -25,7 +26,6 @@ x_test = np.linspace(np.min(x), np.max(x), num=500)
 y_test = wiggly_time_series(x_test)
 x_plot = np.linspace(np.min(x)-20.0, np.max(x)+20.0, 200)
 M = 20
-batch_size = N
 z = np.linspace(-30, 155, num=M)
 # z = x
 
@@ -35,32 +35,42 @@ var_y = 0.2  # observation noise
 
 kern = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f)
 lik = bayesnewton.likelihoods.Gaussian(variance=var_y)
-# lik = bayesnewton.likelihoods.StudentsT()
+# lik = bayesnewton.likelihoods.StudentT()
 # lik = bayesnewton.likelihoods.Beta()
 # lik = bayesnewton.likelihoods.Gamma()
-model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovVariationalGaussNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovVGNGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovExpectationPropagationQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
+# model = bayesnewton.models.MarkovLaplaceGaussNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
+# model = bayesnewton.models.MarkovExpectationPropagationGaussNewtonsGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
+# model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
+# model = bayesnewton.models.MarkovLaplaceGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.InfiniteHorizonVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 # model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, power=0.5)
 
-# model = bayesnewton.models.SparseVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+model = bayesnewton.models.SparseVariationalGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
 # model = bayesnewton.models.SparseExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z, power=0.5)
 # model = bayesnewton.models.ExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y, power=0.5)
 
+# SMVGP = bayesnewton.build_model(bayesnewton.models.SparseMarkovGP, bayesnewton.inference.VariationalInference)
+# model = SMVGP(kernel=kern, likelihood=lik, X=x, Y=y, Z=z)
+
 lr_adam = 0.1
 lr_newton = 1
-iters = 100
+iters = 200
 opt_hypers = objax.optimizer.Adam(model.vars())
 energy = objax.GradValues(model.energy, model.vars())
 
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
-def train_op():
-    # batch = np.random.permutation(N)[:batch_size]
-    # model.inference(lr=lr_newton, batch_ind=batch, **inf_args)  # perform inference and update variational params
-    # dE, E = energy(batch_ind=batch, **inf_args)  # compute energy and its gradients w.r.t. hypers
-    model.inference(lr=lr_newton)  # perform inference and update variational params
-    dE, E = energy()  # compute energy and its gradients w.r.t. hypers
+def train_op(ind):
+    model.inference(batch_ind=ind, lr=lr_newton)  # perform inference and update variational params
+    dE, E = energy(batch_ind=ind)  # compute energy and its gradients w.r.t. hypers
     opt_hypers(lr_adam, dE)
     return E
 
@@ -69,7 +79,8 @@ train_op = objax.Jit(train_op)
 
 t0 = time.time()
 for i in range(1, iters + 1):
-    loss = train_op()
+    batch_ind = np.random.permutation(N)[:Nbatch]
+    loss = train_op(batch_ind)
     print('iter %2d, energy: %1.4f' % (i, loss[0]))
 t1 = time.time()
 print('optimisation time: %2.2f secs' % (t1-t0))

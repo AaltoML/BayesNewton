@@ -400,6 +400,11 @@ def mvn_logpdf(x, mean, cov, mask=None):
     return np.squeeze(-0.5 * (distance + n * LOG2PI + log_det))
 
 
+@vmap
+def mvn_logpdf_(*args, **kwargs):
+    return mvn_logpdf(*args, **kwargs)
+
+
 def mvst_logpdf(x, mean, scale, df, mask=None):
     """
     evaluate a multivariate Student's t (log) pdf
