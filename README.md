@@ -44,7 +44,7 @@ Run tests
 pytest tests
 ```
 
-## Simpe Example
+## Simple Example
 Given some inputs `x` and some data `y`, you can construct a Bayes-Newton model as follows,
 ```python
 kern = bayesnewton.kernels.Matern52()
