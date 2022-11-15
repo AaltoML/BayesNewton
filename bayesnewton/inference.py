@@ -295,6 +295,7 @@ class ExpectationPropagation(InferenceMixin):
             (cavity_mean, cavity_cov), lel_pseudo, lZ = self.compute_ep_energy_terms(batch_ind, self.power)
             cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(batch_ind, cavity_mean, cavity_cov)
         else:
+            # TODO: the batch indices could be handled better here
             (cavity_mean, cavity_cov), lel_pseudo, lZ = self.compute_ep_energy_terms(None, self.power)
             cav_mean_f, cav_cov_f = self.conditional_posterior_to_data(None, cavity_mean, cavity_cov)
             cav_mean_f, cav_cov_f = cav_mean_f[batch_ind], cav_cov_f[batch_ind]
