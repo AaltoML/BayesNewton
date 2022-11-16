@@ -8,7 +8,8 @@ from .utils import (
     inv_vmap,
     vmap_diag,
     solve,
-    ensure_diagonal_positive_precision
+    ensure_diagonal_positive_precision,
+    mvn_logpdf_
 )
 from .likelihoods import Likelihood, MultiLatentLikelihood
 from .basemodels import GaussianDistribution, SparseGP
