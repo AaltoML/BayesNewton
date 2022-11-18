@@ -65,32 +65,42 @@ kern = bayesnewton.kernels.SpatioTemporalMatern52(variance=var_f, lengthscale_ti
 lik = bayesnewton.likelihoods.Bernoulli(link='logit')
 
 
-if method == 0:
-    inf = bayesnewton.inference.Taylor
-elif method == 1:
-    inf = bayesnewton.inference.PosteriorLinearisation
-elif method in [2, 3, 4]:
-    inf = bayesnewton.inference.ExpectationPropagation
-elif method == 5:
-    inf = bayesnewton.inference.VariationalInference
-
 if baseline:
-    mod = bayesnewton.basemodels.MarkovGP
-    Mod = bayesnewton.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, parallel=parallel)
+    if method == 0:
+        model = bayesnewton.models.MarkovTaylorGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, parallel=parallel)
+    elif method == 1:
+        model = bayesnewton.models.MarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y,
+                                                                  parallel=parallel)
+    elif method == 2:
+        model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y,
+                                                       parallel=parallel, power=1.)
+    elif method == 3:
+        model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y,
+                                                       parallel=parallel, power=0.5)
+    elif method == 4:
+        model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y,
+                                                                  parallel=parallel, power=0.01)
+    elif method == 4:
+        model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y,
+                                                                  parallel=parallel)
 else:
-    mod = bayesnewton.basemodels.SparseMarkovGaussianProcess
-    Mod = bayesnewton.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z, parallel=parallel)
-
-if method == 2:
-    inf_args = {"power": 1.}
-elif method == 3:
-    inf_args = {"power": 0.5}
-elif method == 4:
-    inf_args = {"power": 0.01}
-else:
-    inf_args = {}
+    if method == 0:
+        model = bayesnewton.models.SparseMarkovTaylorGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z, parallel=parallel)
+    elif method == 1:
+        model = bayesnewton.models.SparseMarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z,
+                                                                  parallel=parallel)
+    elif method == 2:
+        model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z,
+                                                       parallel=parallel, power=1.)
+    elif method == 3:
+        model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z,
+                                                       parallel=parallel, power=0.5)
+    elif method == 4:
+        model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z,
+                                                                  parallel=parallel, power=0.01)
+    elif method == 4:
+        model = bayesnewton.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=X, R=R, Y=Y, Z=Z,
+                                                                  parallel=parallel)
 
 
 lr_adam = 0.1
@@ -102,8 +112,8 @@ energy = objax.GradValues(model.energy, model.vars())
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
-    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    model.inference(lr=lr_newton)  # perform inference and update variational params
+    dE, E = energy()  # compute energy and its gradients w.r.t. hypers
     opt_hypers(lr_adam, dE)
     return E
 

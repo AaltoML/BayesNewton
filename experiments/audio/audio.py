@@ -98,37 +98,44 @@ kern = bayesnewton.kernels.SpectroTemporal(
 lik = bayesnewton.likelihoods.AudioAmplitudeDemodulation(num_components=num_components, variance=0.3)
 
 
-if method == 0:
-    inf = bayesnewton.inference.Taylor
-elif method == 1:
-    inf = bayesnewton.inference.PosteriorLinearisation
-elif method in [2, 3, 4]:
-    inf = bayesnewton.inference.ExpectationPropagationRiemann
-    # inf = bayesnewton.inference.ExpectationPropagation
-elif method == 5:
-    inf = bayesnewton.inference.VariationalInferenceRiemann
-    # inf = bayesnewton.inference.VariationalInference
-print('inference method:', inf)
-
 if baseline:
-    mod = bayesnewton.basemodels.MarkovGaussianProcess
-    Mod = bayesnewton.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, parallel=parallel)
+    if method == 0:
+        model = bayesnewton.models.MarkovTaylorGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, parallel=parallel)
+    elif method == 1:
+        model = bayesnewton.models.MarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train,
+                                                                  parallel=parallel)
+    elif method == 2:
+        model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train,
+                                                       parallel=parallel, power=1.)
+    elif method == 3:
+        model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train,
+                                                       parallel=parallel, power=0.5)
+    elif method == 4:
+        model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train,
+                                                                  parallel=parallel, power=0.01)
+    elif method == 4:
+        model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train,
+                                                                  parallel=parallel)
 else:
-    mod = bayesnewton.basemodels.SparseMarkovGaussianProcess
-    Mod = bayesnewton.build_model(mod, inf)
-    model = Mod(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z, parallel=parallel)
+    if method == 0:
+        model = bayesnewton.models.SparseMarkovTaylorGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z, parallel=parallel)
+    elif method == 1:
+        model = bayesnewton.models.SparseMarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z,
+                                                                  parallel=parallel)
+    elif method == 2:
+        model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z,
+                                                       parallel=parallel, power=1.)
+    elif method == 3:
+        model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z,
+                                                       parallel=parallel, power=0.5)
+    elif method == 4:
+        model = bayesnewton.models.SparseMarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z,
+                                                                  parallel=parallel, power=0.01)
+    elif method == 4:
+        model = bayesnewton.models.SparseMarkovVariationalGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, Z=z,
+                                                                  parallel=parallel)
 
-unscented_transform = Unscented(dim=num_components)  # 5th-order unscented transform
-
-if method == 2:
-    inf_args = {"power": 1., "cubature": unscented_transform}
-elif method == 3:
-    inf_args = {"power": 0.5, "cubature": unscented_transform}
-elif method == 4:
-    inf_args = {"power": 0.01, "cubature": unscented_transform}
-else:
-    inf_args = {"cubature": unscented_transform}
+unscented_transform = Unscented(dim=None)  # 5th-order unscented transform
 
 
 lr_adam = 0.05
@@ -139,8 +146,8 @@ energy = objax.GradValues(model.energy, model.vars())
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    model.inference(lr=lr_newton, **inf_args)  # perform inference and update variational params
-    dE, E = energy(**inf_args)  # compute energy and its gradients w.r.t. hypers
+    model.inference(lr=lr_newton, cubature=unscented_transform)  # perform inference and update variational params
+    dE, E = energy(cubature=unscented_transform)  # compute energy and its gradients w.r.t. hypers
     opt_hypers(lr_adam, dE)
     return E
 
