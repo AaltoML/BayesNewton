@@ -1541,14 +1541,14 @@ class HeteroscedasticStudentsT(MultiLatentLikelihood, GeneralisedGaussNewtonMixi
     def evaluate_log_likelihood(self, y, f):
         """
         """
-        mu, scale = self.conditional_moments(f)
+        mu, scale2 = self.conditional_moments(f)
         const = (
             gammaln((self.df + 1.0) * 0.5)
             - gammaln(self.df * 0.5)
-            - 0.5 * (np.log(np.square(scale)) + np.log(self.df) + np.log(np.pi))
+            - 0.5 * (np.log(scale2) + np.log(self.df) + np.log(np.pi))
         )
         return np.squeeze(const - 0.5 * (self.df + 1.0) * np.log(
-            1.0 + (1.0 / self.df) * (np.square((y - mu) / scale))
+            1.0 + (1.0 / self.df) * (np.square(y - mu) / scale2)
         ))
 
     def conditional_moments(self, f, hyp=None):
