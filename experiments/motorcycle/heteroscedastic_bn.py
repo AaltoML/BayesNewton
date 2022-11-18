@@ -60,8 +60,8 @@ len_f1 = 1.  # GP lengthscale
 var_f2 = 1.  # GP variance
 len_f2 = 1.  # GP lengthscale
 
-kern1 = bayesnewton.kernels.Matern32(variance=var_f1, lengthscale=len_f1)
-kern2 = bayesnewton.kernels.Matern32(variance=var_f2, lengthscale=len_f2)
+kern1 = bayesnewton.kernels.Matern32(variance=var_f1, lengthscale=len_f1, fix_variance=True, fix_lengthscale=True)
+kern2 = bayesnewton.kernels.Matern32(variance=var_f2, lengthscale=len_f2, fix_variance=True, fix_lengthscale=True)
 kern = bayesnewton.kernels.Independent([kern1, kern2])
 lik = bayesnewton.likelihoods.HeteroscedasticNoise()
 
@@ -103,14 +103,16 @@ if inf_method == 3:  # PL
         model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderRiemannGP(kernel=kern, likelihood=lik, X=X, Y=Y)
     elif approx_method == 4:
         model = bayesnewton.models.MarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=X, Y=Y)
-    elif approx_method == 5:
-        model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+    # elif approx_method == 5:
+    #     model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+if inf_method == 4:  # first-order VI
+    model = bayesnewton.models.FirstOrderMarkovVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 
 
-lr_adam = 0.01
+lr_adam = 0.1
 lr_newton = 0.3
-iters = 300
-opt_hypers = objax.optimizer.Adam(model.vars())
+iters = 500
+opt_hypers = objax.optimizer.Adam(model.vars(), beta2=0.99)
 energy = objax.GradValues(model.energy, model.vars())
 
 damping = 0.5
@@ -118,9 +120,11 @@ damping = 0.5
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    model.inference(lr=lr_newton, damping=damping)  # perform inference and update variational params
+    if inf_method < 4:
+        model.inference(lr=lr_newton, damping=damping)  # perform inference and update variational params
     dE, E = energy()  # compute energy and its gradients w.r.t. hypers
-    # opt_hypers(lr_adam, dE)
+    if inf_method == 4:
+        opt_hypers(lr_adam, dE)
     test_nlpd_ = model.negative_log_predictive_density(X=XT, Y=YT)
     return E, test_nlpd_
 

@@ -21,14 +21,16 @@ kern = bayesnewton.kernels.SpectroTemporal(
     modulator_lengthscales=modulator_lengthscales,
     modulator_variances=modulator_variances,
     subband_kernel=subband_kernel,
-    modulator_kernel=modulator_kernel
+    modulator_kernel=modulator_kernel,
+    fix_params=True
 )
 
 lik_var = 0.1
 lik = bayesnewton.likelihoods.AudioAmplitudeDemodulation(
     num_components=1,
     variance=lik_var,
-    # fix_variance=True
+    fix_variance=True,
+    fix_weights=True
 )
 
 dummy_model = bayesnewton.basemodels.MarkovGaussianProcess(kernel=kern, likelihood=lik, X=XAll, Y=np.zeros_like(XAll))
@@ -62,7 +64,7 @@ else:
     approx_method = 0
     fold = 0
     plot_final = True
-    make_tikz = True
+    make_tikz = False
     save_result = False
 
 np.random.seed(123)
@@ -116,14 +118,16 @@ if inf_method == 3:  # PL
         model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderRiemannGP(kernel=kern, likelihood=lik, X=X, Y=Y)
     elif approx_method == 4:
         model = bayesnewton.models.MarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=X, Y=Y)
-    elif approx_method == 5:
-        model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+    # elif approx_method == 5:
+    #     model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+if inf_method == 4:  # first-order VI
+    model = bayesnewton.models.FirstOrderMarkovVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 
 
-lr_adam = 0.01
+lr_adam = 0.1
 lr_newton = 0.1
 iters = 300
-opt_hypers = objax.optimizer.Adam(model.vars())
+opt_hypers = objax.optimizer.Adam(model.vars(), beta2=0.99)
 energy = objax.GradValues(model.energy, model.vars())
 
 if inf_method == 0:  # Newton
@@ -134,9 +138,13 @@ else:
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    _, diffs = model.inference(lr=lr_newton, damping=damping)  # perform inference and update variational params
+    if inf_method < 4:
+        _, diffs = model.inference(lr=lr_newton, damping=damping)  # perform inference and update variational params
+    else:
+        diffs = (0., 0.)
     dE, E = energy()  # compute energy and its gradients w.r.t. hypers
-    # opt_hypers(lr_adam, dE)
+    if inf_method == 4:
+        opt_hypers(lr_adam, dE)
     test_nlpd_ = model.negative_log_predictive_density(X=XT, Y=YT)
     posterior_mean_all_, _ = model.predict(X=XAll)
     return E, dE, test_nlpd_, diffs, posterior_mean_all_
@@ -157,7 +165,7 @@ for i in range(1, iters + 1):
     f1predict = posterior_mean_all[:, 1]
     rmse = np.sqrt((np.mean((f0true-f0predict)**2) + np.mean((f1true-f1predict)**2)) / 2.)
     print('iter %2d, energy: %1.4f, nlpd: %1.4f, rmse: %1.4f' % (i, loss[0], test_nlpd, rmse))
-    print(diff1, diff2)
+    # print(diff1, diff2)
     if np.mod(i-1, 10) == 0:
         losses[(i-1)//10] = loss[0]
         nlpds[(i-1)//10] = test_nlpd

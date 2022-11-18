@@ -153,9 +153,9 @@ elif method == 14:
 elif method == 15:
     model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderQuasiNewtonGP(kernel=kern, likelihood=lik, X=x_train,
                                                                                  Y=y_train, parallel=parallel)
-elif method == 16:
-    model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=x_train,
-                                                                  Y=y_train, parallel=parallel)
+# elif method == 16:
+#     model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=x_train,
+#                                                                   Y=y_train, parallel=parallel)
 elif method == 17:
     model = bayesnewton.models.MarkovVariationalRiemannGP(kernel=kern, likelihood=lik, X=x_train, Y=y_train, parallel=parallel)
 elif method == 18:

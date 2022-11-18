@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for (( approx=0; approx<6; approx++ ))
+for (( approx=0; approx<5; approx++ ))
 do
 for (( fold=0; fold<4; fold++ ))
 do

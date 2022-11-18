@@ -15,7 +15,7 @@ else:
     inf_method = 1
     approx_method = 1
     fold = 0
-    plot_final = True
+    plot_final = False
 
 model_type = 0
 
@@ -47,8 +47,8 @@ else:
     len_f = 5.0  # GP lengthscale
     len_f_w = 80.0
 
-kern_latent = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f)
-kern_weight = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f_w)
+kern_latent = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f, fix_variance=True, fix_lengthscale=True)
+kern_weight = bayesnewton.kernels.Matern52(variance=var_f, lengthscale=len_f_w, fix_variance=True, fix_lengthscale=True)
 kern_latents = [kern_latent for i in range(num_latents)]
 kern_weights = [kern_weight for j in range(num_latents * num_outputs)]
 kern = bayesnewton.kernels.Independent(kernels=kern_latents + kern_weights)
@@ -130,13 +130,15 @@ if inf_method == 3:  # PL
         model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderRiemannGP(kernel=kern, likelihood=lik, X=X, Y=Y)
     elif approx_method == 4:
         model = bayesnewton.models.MarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=X, Y=Y)
-    elif approx_method == 5:
-        model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+    # elif approx_method == 5:
+    #     model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+if inf_method == 4:  # first-order VI
+    model = bayesnewton.models.FirstOrderMarkovVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 
-lr_adam = 0.05
+lr_adam = 0.1
 lr_newton = 0.3
 iters = 1000
-opt_hypers = objax.optimizer.Adam(model.vars())
+opt_hypers = objax.optimizer.Adam(model.vars(), beta2=0.99)  # reduce beta to make things more stable
 energy = objax.GradValues(model.energy, model.vars())
 
 unscented_transform = bayesnewton.cubature.Unscented(dim=kern.num_kernels)  # 5th-order unscented transform
@@ -146,9 +148,11 @@ damping = 0.3
 
 @objax.Function.with_vars(model.vars() + opt_hypers.vars())
 def train_op():
-    model.inference(lr=lr_newton, damping=damping, cubature=unscented_transform)
+    if inf_method < 4:
+        model.inference(lr=lr_newton, damping=damping, cubature=unscented_transform)
     dE, E = energy(cubature=unscented_transform)  # compute energy and its gradients w.r.t. hypers
-    # opt_hypers(lr_adam, dE)
+    if inf_method == 4:
+        opt_hypers(lr_adam, dE)
     test_nlpd_ = model.negative_log_predictive_density(X=XT, Y=YT, cubature=unscented_transform)
     posterior_mean_, posterior_cov_ = model.predict_y(X=XT[N // 3:2 * N // 3], cubature=unscented_transform)
     return E, test_nlpd_, posterior_mean_
