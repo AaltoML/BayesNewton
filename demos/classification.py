@@ -45,7 +45,6 @@ model = bayesnewton.models.SparseExpectationPropagationGP(kernel=kern, likelihoo
 # model = bayesnewton.models.MarkovExpectationPropagationRiemannGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovPosteriorLinearisationGP(kernel=kern, likelihood=lik, X=x, Y=y)
-# model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderQuasiNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)
 # model = bayesnewton.models.MarkovTaylorNewtonGP(kernel=kern, likelihood=lik, X=x, Y=y)

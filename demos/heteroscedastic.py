@@ -46,13 +46,13 @@ len_f1 = 1.  # GP lengthscale
 var_f2 = 1.  # GP variance
 len_f2 = 1.  # GP lengthscale
 
-kern1 = bayesnewton.kernels.Matern32(variance=var_f1, lengthscale=len_f1)
-kern2 = bayesnewton.kernels.Matern32(variance=var_f2, lengthscale=len_f2)
+kern1 = bayesnewton.kernels.Matern32(variance=var_f1, lengthscale=len_f1, fix_variance=True, fix_lengthscale=True)
+kern2 = bayesnewton.kernels.Matern32(variance=var_f2, lengthscale=len_f2, fix_variance=True, fix_lengthscale=True)
 kern = bayesnewton.kernels.Independent([kern1, kern2])
 lik = bayesnewton.likelihoods.HeteroscedasticNoise()
 
 # model = bayesnewton.models.MarkovNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
-# model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
+model = bayesnewton.models.MarkovVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model = bayesnewton.models.MarkovExpectationPropagationGP(kernel=kern, likelihood=lik, X=X, Y=Y, power=0.5)
 # model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model = bayesnewton.models.InfiniteHorizonVariationalGP(kernel=kern, likelihood=lik, X=X, Y=Y)
@@ -65,7 +65,6 @@ lik = bayesnewton.likelihoods.HeteroscedasticNoise()
 # model = bayesnewton.models.MarkovQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model = bayesnewton.models.MarkovExpectationPropagationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y, power=0.5)
-model = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # --- Riemannian grads ---
 # model = bayesnewton.models.MarkovVariationalRiemannGP(kernel=kern, likelihood=lik, X=X, Y=Y)

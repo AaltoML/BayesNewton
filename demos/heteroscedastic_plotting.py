@@ -70,7 +70,6 @@ model_gn = bayesnewton.models.MarkovVariationalGaussNewtonGP(kernel=kern, likeli
 # model_qn = bayesnewton.models.MarkovQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 model_qn = bayesnewton.models.MarkovVariationalQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model_qn = bayesnewton.models.MarkovExpectationPropagationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y, power=0.5)
-# model_qn = bayesnewton.models.MarkovPosteriorLinearisationQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # model_qn = bayesnewton.models.MarkovPosteriorLinearisation2ndOrderQuasiNewtonGP(kernel=kern, likelihood=lik, X=X, Y=Y)
 # --- Riemannian grads ---
 # model_psd = bayesnewton.models.MarkovNewtonRiemannGP(kernel=kern, likelihood=lik, X=X, Y=Y)
