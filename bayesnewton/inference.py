@@ -1012,71 +1012,71 @@ class ExpectationPropagationQuasiNewton(QuasiNewtonBase, ExpectationPropagation)
         return cav_mean_f, jacobian, hessian, (cavity_mean_var, jacobian_unscaled_mean_var, B)
 
 
-class PosteriorLinearisationQuasiNewton(QuasiNewtonBase, PosteriorLinearisation):
-    """
-    Quasi-Newton (BFGS) Posterior Linearisation (PL)
-    TODO: implement grouped update to enable sparse markov inference
-    """
-
-    def update_variational_params(self, batch_ind=None, lr=1., damping=1., cubature=None, **kwargs):
-        """
-        """
-        if batch_ind is None:
-            batch_ind = np.arange(self.num_data)
-        ind = self.ind[batch_ind]
-
-        mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
-
-        mu, omega, dmu_dm, d2mu_dm2 = vmap(self.likelihood.statistical_linear_regression, (0, 0, None))(
-            mean_f,
-            cov_f,
-            cubature
-        )
-        dmu_dv = 0.5 * d2mu_dm2
-        dmu_dv = dmu_dv.reshape(dmu_dv.shape[0], dmu_dv.shape[1], -1)
-
-        residual = self.Y[batch_ind].reshape(mu.shape) - mu
-
-        # deal with missing data
-        mask = np.isnan(residual)
-        residual = np.where(mask, 0., residual)
-        omega = np.where(mask + transpose(mask), 0., omega)
-        omega = np.where(vmap_diag(mask[..., 0]), 1e6, omega)
-
-        dmu_omega = transpose(solve(omega, dmu_dm))  # dmu_dm^T @ inv(omega)
-        jacobian = dmu_omega @ residual
-        hessian_not_used = -dmu_omega @ dmu_dm
-        jacobian_var = transpose(solve(omega, dmu_dv)) @ residual
-
-        jacobian, _ = self.conditional_data_to_posterior(jacobian, hessian_not_used)
-
-        if self.fullcov:
-            mean_var = np.concatenate([mean_f, cov_f.reshape(self.num_data, -1, 1)], axis=1)
-            jacobian_mean_var = np.concatenate([
-                jacobian.reshape(self.num_data, -1, 1),
-                jacobian_var.reshape(self.num_data, -1, 1)
-            ], axis=1)
-        else:
-            mean_var = np.concatenate([mean_f, diag(cov_f)[..., None]], axis=1)
-            d = mean_f.shape[1]
-            jacobian_mean_var = np.concatenate([
-                jacobian,
-                diag(jacobian_var.reshape(self.num_data, d, d))[..., None]
-            ], axis=1)
-
-        B = damped_bfgs_modified(
-            mean_var, jacobian_mean_var,
-            self.mean_prev.value[ind], self.jacobian_prev.value[ind],
-            self.hessian_approx.value[ind],
-            damping=damping
-        )
-
-        if self.mean_prev.value.shape[0] != mean_f.shape[0]:
-            B = index_update(self.hessian_approx.value, index[ind], B)
-            jacobian = index_update(self.jacobian_prev.value, index[ind], jacobian)
-            mean_f = index_update(self.mean_prev.value, index[ind], mean_f)
-
-        return mean_f, jacobian, B[:, :self.func_dim, :self.func_dim], (mean_var, jacobian_mean_var, B)
+# class PosteriorLinearisationQuasiNewton(QuasiNewtonBase, PosteriorLinearisation):
+#     """
+#     Quasi-Newton (BFGS) Posterior Linearisation (PL)
+#     TODO: implement grouped update to enable sparse markov inference
+#     """
+#
+#     def update_variational_params(self, batch_ind=None, lr=1., damping=1., cubature=None, **kwargs):
+#         """
+#         """
+#         if batch_ind is None:
+#             batch_ind = np.arange(self.num_data)
+#         ind = self.ind[batch_ind]
+#
+#         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
+#
+#         mu, omega, dmu_dm, d2mu_dm2 = vmap(self.likelihood.statistical_linear_regression, (0, 0, None))(
+#             mean_f,
+#             cov_f,
+#             cubature
+#         )
+#         dmu_dv = 0.5 * d2mu_dm2
+#         dmu_dv = dmu_dv.reshape(dmu_dv.shape[0], dmu_dv.shape[1], -1)
+#
+#         residual = self.Y[batch_ind].reshape(mu.shape) - mu
+#
+#         # deal with missing data
+#         mask = np.isnan(residual)
+#         residual = np.where(mask, 0., residual)
+#         omega = np.where(mask + transpose(mask), 0., omega)
+#         omega = np.where(vmap_diag(mask[..., 0]), 1e6, omega)
+#
+#         dmu_omega = transpose(solve(omega, dmu_dm))  # dmu_dm^T @ inv(omega)
+#         jacobian = dmu_omega @ residual
+#         hessian_not_used = -dmu_omega @ dmu_dm
+#         jacobian_var = transpose(solve(omega, dmu_dv)) @ residual
+#
+#         jacobian, _ = self.conditional_data_to_posterior(jacobian, hessian_not_used)
+#
+#         if self.fullcov:
+#             mean_var = np.concatenate([mean_f, cov_f.reshape(self.num_data, -1, 1)], axis=1)
+#             jacobian_mean_var = np.concatenate([
+#                 jacobian.reshape(self.num_data, -1, 1),
+#                 jacobian_var.reshape(self.num_data, -1, 1)
+#             ], axis=1)
+#         else:
+#             mean_var = np.concatenate([mean_f, diag(cov_f)[..., None]], axis=1)
+#             d = mean_f.shape[1]
+#             jacobian_mean_var = np.concatenate([
+#                 jacobian,
+#                 diag(jacobian_var.reshape(self.num_data, d, d))[..., None]
+#             ], axis=1)
+#
+#         B = damped_bfgs_modified(
+#             mean_var, jacobian_mean_var,
+#             self.mean_prev.value[ind], self.jacobian_prev.value[ind],
+#             self.hessian_approx.value[ind],
+#             damping=damping
+#         )
+#
+#         if self.mean_prev.value.shape[0] != mean_f.shape[0]:
+#             B = index_update(self.hessian_approx.value, index[ind], B)
+#             jacobian = index_update(self.jacobian_prev.value, index[ind], jacobian)
+#             mean_f = index_update(self.mean_prev.value, index[ind], mean_f)
+#
+#         return mean_f, jacobian, B[:, :self.func_dim, :self.func_dim], (mean_var, jacobian_mean_var, B)
 
 
 class PosteriorLinearisation2ndOrderQuasiNewton(QuasiNewtonBase, PosteriorLinearisation):

@@ -1,6 +1,7 @@
 import objax
 import jax.numpy as np
-from .utils import diag
+from jax import vmap
+from .utils import diag, cho_factor, cho_solve, softplus, softplus_inv, transpose
 from .basemodels import (
     GaussianProcess,
     SparseGaussianProcess,
@@ -25,12 +26,13 @@ from .inference import (
     QuasiNewton,
     VariationalQuasiNewton,
     ExpectationPropagationQuasiNewton,
-    PosteriorLinearisationQuasiNewton,
+    # PosteriorLinearisationQuasiNewton,
     NewtonRiemann,
     VariationalInferenceRiemann,
     ExpectationPropagationRiemann,
     PosteriorLinearisation2ndOrderRiemann
 )
+from .kernels import Independent
 
 
 # ############  Syntactic sugar adding the inference method functionality to the models  ################
@@ -58,7 +60,7 @@ class VariationalGP(VariationalInference, GaussianProcess):
 
 class SparseVariationalGP(VariationalInference, SparseGaussianProcess):
     """
-    Sparse variational Gaussian process (SVGP) [1, 2]
+    Sparse variational Gaussian process (SVGP) [1], adapted to use conjugate computation VI [2]
     :param kernel: a kernel object
     :param likelihood: a likelihood object
     :param X: inputs
@@ -67,7 +69,8 @@ class SparseVariationalGP(VariationalInference, SparseGaussianProcess):
     :param opt_z: boolean determining whether to optimise the inducing input locations
 
     [1] Hensman, Matthews, Ghahramani: Scalable Variational Gaussian Process Classification, AISTATS 2015
-    [2] Adam, Chang, Khan, Solin: Dual Parameterization of Sparse Variational Gaussian Processes, NeurIPS 2021
+    [2] Khan, Lin: Conugate-Computation Variational Inference - Converting Inference in Non-Conjugate Models in to
+                   Inference in Conjugate Models, AISTATS 2017
     """
     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
         super().__init__(kernel, likelihood, X, Y, Z, opt_z)
@@ -516,26 +519,26 @@ class ExpectationPropagationQuasiNewtonGP(ExpectationPropagationQuasiNewton, Gau
             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
 
 
-class PosteriorLinearisationQuasiNewtonGP(PosteriorLinearisationQuasiNewton, GaussianProcess):
-    def __init__(self, kernel, likelihood, X, Y, fullcov=True):
-        self.fullcov = fullcov
-        super().__init__(kernel, likelihood, X, Y)
-        if fullcov:
-            self.mean_prev = objax.StateVar(
-                np.concatenate([self.pseudo_likelihood.mean,
-                                np.reshape(self.pseudo_likelihood.covariance, (self.num_data, -1, 1))],
-                               axis=1)
-            )
-            dim = self.mean_prev.value.shape[1]
-            self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, dim, 1]))
-            self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(dim), [self.num_data, 1, 1]))
-        else:
-            self.mean_prev = objax.StateVar(
-                np.concatenate([self.pseudo_likelihood.mean,
-                                diag(self.pseudo_likelihood.covariance)[..., None]], axis=1)
-            )
-            self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, 2 * self.func_dim, 1]))
-            self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
+# class PosteriorLinearisationQuasiNewtonGP(PosteriorLinearisationQuasiNewton, GaussianProcess):
+#     def __init__(self, kernel, likelihood, X, Y, fullcov=True):
+#         self.fullcov = fullcov
+#         super().__init__(kernel, likelihood, X, Y)
+#         if fullcov:
+#             self.mean_prev = objax.StateVar(
+#                 np.concatenate([self.pseudo_likelihood.mean,
+#                                 np.reshape(self.pseudo_likelihood.covariance, (self.num_data, -1, 1))],
+#                                axis=1)
+#             )
+#             dim = self.mean_prev.value.shape[1]
+#             self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, dim, 1]))
+#             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(dim), [self.num_data, 1, 1]))
+#         else:
+#             self.mean_prev = objax.StateVar(
+#                 np.concatenate([self.pseudo_likelihood.mean,
+#                                 diag(self.pseudo_likelihood.covariance)[..., None]], axis=1)
+#             )
+#             self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, 2 * self.func_dim, 1]))
+#             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
 
 
 class PosteriorLinearisation2ndOrderQuasiNewtonGP(PosteriorLinearisation2ndOrderQuasiNewton, GaussianProcess):
@@ -618,26 +621,26 @@ class SparseExpectationPropagationQuasiNewtonGP(ExpectationPropagationQuasiNewto
             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
 
 
-class SparsePosteriorLinearisationQuasiNewtonGP(PosteriorLinearisationQuasiNewton, SparseGaussianProcess):
-    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False, fullcov=True):
-        self.fullcov = fullcov
-        super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
-        if fullcov:
-            self.mean_prev = objax.StateVar(
-                np.concatenate([self.pseudo_likelihood.mean,
-                                np.reshape(self.pseudo_likelihood.covariance, (self.num_data, -1, 1))],
-                               axis=1)
-            )
-            dim = self.mean_prev.value.shape[1]
-            self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, dim, 1]))
-            self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(dim), [self.num_data, 1, 1]))
-        else:
-            self.mean_prev = objax.StateVar(
-                np.concatenate([self.pseudo_likelihood.mean,
-                                diag(self.pseudo_likelihood.covariance)[..., None]], axis=1)
-            )
-            self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, 2 * self.func_dim, 1]))
-            self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
+# class SparsePosteriorLinearisationQuasiNewtonGP(PosteriorLinearisationQuasiNewton, SparseGaussianProcess):
+#     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False, fullcov=True):
+#         self.fullcov = fullcov
+#         super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
+#         if fullcov:
+#             self.mean_prev = objax.StateVar(
+#                 np.concatenate([self.pseudo_likelihood.mean,
+#                                 np.reshape(self.pseudo_likelihood.covariance, (self.num_data, -1, 1))],
+#                                axis=1)
+#             )
+#             dim = self.mean_prev.value.shape[1]
+#             self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, dim, 1]))
+#             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(dim), [self.num_data, 1, 1]))
+#         else:
+#             self.mean_prev = objax.StateVar(
+#                 np.concatenate([self.pseudo_likelihood.mean,
+#                                 diag(self.pseudo_likelihood.covariance)[..., None]], axis=1)
+#             )
+#             self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, 2 * self.func_dim, 1]))
+#             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
 
 
 class SparsePosteriorLinearisation2ndOrderQuasiNewtonGP(PosteriorLinearisation2ndOrderQuasiNewton,
@@ -722,26 +725,26 @@ class MarkovExpectationPropagationQuasiNewtonGP(ExpectationPropagationQuasiNewto
             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
 
 
-class MarkovPosteriorLinearisationQuasiNewtonGP(PosteriorLinearisationQuasiNewton, MarkovGaussianProcess):
-    def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None, fullcov=True):
-        self.fullcov = fullcov
-        super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel)
-        if fullcov:
-            self.mean_prev = objax.StateVar(
-                np.concatenate([self.pseudo_likelihood.mean,
-                                np.reshape(self.pseudo_likelihood.covariance, (self.num_data, -1, 1))],
-                               axis=1)
-            )
-            dim = self.mean_prev.value.shape[1]
-            self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, dim, 1]))
-            self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(dim), [self.num_data, 1, 1]))
-        else:
-            self.mean_prev = objax.StateVar(
-                np.concatenate([self.pseudo_likelihood.mean,
-                                diag(self.pseudo_likelihood.covariance)[..., None]], axis=1)
-            )
-            self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, 2 * self.func_dim, 1]))
-            self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
+# class MarkovPosteriorLinearisationQuasiNewtonGP(PosteriorLinearisationQuasiNewton, MarkovGaussianProcess):
+#     def __init__(self, kernel, likelihood, X, Y, R=None, parallel=None, fullcov=True):
+#         self.fullcov = fullcov
+#         super().__init__(kernel, likelihood, X, Y, R=R, parallel=parallel)
+#         if fullcov:
+#             self.mean_prev = objax.StateVar(
+#                 np.concatenate([self.pseudo_likelihood.mean,
+#                                 np.reshape(self.pseudo_likelihood.covariance, (self.num_data, -1, 1))],
+#                                axis=1)
+#             )
+#             dim = self.mean_prev.value.shape[1]
+#             self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, dim, 1]))
+#             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(dim), [self.num_data, 1, 1]))
+#         else:
+#             self.mean_prev = objax.StateVar(
+#                 np.concatenate([self.pseudo_likelihood.mean,
+#                                 diag(self.pseudo_likelihood.covariance)[..., None]], axis=1)
+#             )
+#             self.jacobian_prev = objax.StateVar(np.zeros([self.num_data, 2 * self.func_dim, 1]))
+#             self.hessian_approx = objax.StateVar(-1e2 * np.tile(np.eye(2 * self.func_dim), [self.num_data, 1, 1]))
 
 
 class MarkovPosteriorLinearisation2ndOrderQuasiNewtonGP(PosteriorLinearisation2ndOrderQuasiNewton,
@@ -823,3 +826,118 @@ class MarkovNewtonRiemannGP(NewtonRiemann, MarkovGaussianProcess):
 
 
 MarkovLaplaceRiemannGP = MarkovNewtonRiemannGP
+
+
+class TrainableDiagonalGaussianDistribution(objax.Module):
+
+    def __init__(self, mean, variance):
+        self.mean_ = objax.TrainVar(mean)
+        self.transformed_variance = objax.TrainVar(vmap(softplus_inv)(variance))
+
+    def __call__(self):
+        return self.mean, self.covariance
+
+    @property
+    def mean(self):
+        return self.mean_.value
+
+    @property
+    def variance(self):
+        return softplus(self.transformed_variance.value)
+
+    @property
+    def covariance(self):
+        return vmap(np.diag)(self.variance)
+
+    @property
+    def nat1(self):
+        chol = cho_factor(self.covariance, lower=True)
+        return cho_solve(chol, self.mean)
+
+    @property
+    def nat2(self):
+        chol = cho_factor(self.covariance, lower=True)
+        return cho_solve(chol, np.tile(np.eye(self.covariance.shape[1]), [self.covariance.shape[0], 1, 1]))
+
+
+class TrainableGaussianDistribution(objax.Module):
+
+    def __init__(self, mean, covariance):
+        self.dim = mean.shape[1]
+        cholcov, _ = cho_factor(covariance, lower=True)
+        self.mean_ = objax.TrainVar(mean)
+        self.transformed_covariance = objax.TrainVar(vmap(self.get_tril, [0, None])(cholcov, self.dim))
+
+    def __call__(self):
+        return self.mean, self.covariance
+
+    @staticmethod
+    def get_tril(chol, dim):
+        return chol[np.tril_indices(dim)]
+
+    def fill_lower_tri(self, v):
+        idx = np.tril_indices(self.dim)
+        return np.zeros((self.dim, self.dim), dtype=v.dtype).at[idx].set(v)
+
+    @property
+    def mean(self):
+        return self.mean_.value
+
+    @property
+    def covariance(self):
+        chol_low = vmap(self.fill_lower_tri)(self.transformed_covariance.value)
+        return transpose(chol_low) @ chol_low
+
+    @property
+    def nat1(self):
+        chol = cho_factor(self.covariance, lower=True)
+        return cho_solve(chol, self.mean)
+
+    @property
+    def nat2(self):
+        chol = cho_factor(self.covariance, lower=True)
+        return cho_solve(chol, np.tile(np.eye(self.covariance.shape[1]), [self.covariance.shape[0], 1, 1]))
+
+
+class FirstOrderVariationalGP(VariationalGP):
+
+    def __init__(self, kernel, likelihood, X, Y):
+        super().__init__(kernel, likelihood, X, Y)
+        if isinstance(self.kernel, Independent):
+            pseudo_lik_size = self.func_dim  # the multi-latent case
+        else:
+            pseudo_lik_size = self.obs_dim
+        # self.pseudo_likelihood = TrainableDiagonalGaussianDistribution(
+        #     mean=np.zeros([self.num_data, pseudo_lik_size, 1]),
+        #     variance=1e2 * np.ones([self.num_data, pseudo_lik_size])
+        # )
+        self.pseudo_likelihood = TrainableGaussianDistribution(
+            mean=np.zeros([self.num_data, pseudo_lik_size, 1]),
+            covariance=1e2 * np.tile(np.eye(pseudo_lik_size), [self.num_data, 1, 1])
+        )
+
+    def energy(self, **kwargs):
+        """
+        """
+        self.update_posterior()
+        return super().energy(**kwargs)
+
+
+class FirstOrderMarkovVariationalGP(MarkovVariationalGP):
+
+    def __init__(self, kernel, likelihood, X, Y):
+        super().__init__(kernel, likelihood, X, Y)
+        if isinstance(self.kernel, Independent):
+            pseudo_lik_size = self.func_dim  # the multi-latent case
+        else:
+            pseudo_lik_size = self.obs_dim
+        self.pseudo_likelihood = TrainableGaussianDistribution(
+            mean=np.zeros([self.num_data, pseudo_lik_size, 1]),
+            covariance=1e2 * np.tile(np.eye(pseudo_lik_size), [self.num_data, 1, 1])
+        )
+
+    def energy(self, **kwargs):
+        """
+        """
+        self.update_posterior()
+        return super().energy(**kwargs)
