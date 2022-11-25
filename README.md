@@ -21,7 +21,7 @@ pip install -e .
 
 ### Step-by-step: Getting started with the examples
 
-For running the demos or experiments in this repository or building on top of it, you can follow these steps for creating a virtual enivironment and activating it:
+For running the demos or experiments in this repository or building on top of it, you can follow these steps for creating a virtual environment and activating it:
 ```bash
 python3 -m venv venv
 source venv/bin/activate
@@ -33,15 +33,15 @@ python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-Running the tests requires additionally
+Running the tests requires additionally a specific version of GPflow to test against:
 ```bash
 python -m pip install pytest
-python -m pip install gpflow==2.5.2
+python -m pip install tensorflow==2.10 tensorflow-probability==0.18.0 gpflow==2.5.2
 ```
 
 Run tests
 ```bash
-pytest tests
+cd tests; pytest
 ```
 
 ## Simple Example
