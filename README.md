@@ -1,6 +1,6 @@
 # Bayes-Newton
 
-Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and actively maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
+Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) in [JAX](https://github.com/google/jax) (with [objax](https://github.com/google/objax)), built and maintained by [Will Wilkinson](https://wil-j-wil.github.io/).
 
 Bayes-Newton provides a unifying view of approximate Bayesian inference, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
@@ -8,11 +8,43 @@ The methodology is outlined in the following article:
 * W.J. Wilkinson, S. Särkkä, and A. Solin (2021): **Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees**. [*arXiv preprint arXiv:2111.01721*](https://arxiv.org/abs/2111.01721).
 
 ## Installation
+
+Latest (stable) release from PyPI
 ```bash
 pip install bayesnewton
 ```
 
-## Example
+For *development*, you might want to use the latest source from GitHub: In a check-out of the develop branch of the BayesNewton GitHub repository, run
+```bash
+pip install -e .
+```
+
+### Step-by-step: Getting started with the examples
+
+For running the demos or experiments in this repository or building on top of it, you can follow these steps for creating a virtual environment and activating it:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+Installing all required dependencies for the examples:
+```bash
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+Running the tests requires additionally a specific version of GPflow to test against:
+```bash
+python -m pip install pytest
+python -m pip install tensorflow==2.10 tensorflow-probability==0.18.0 gpflow==2.5.2
+```
+
+Run tests
+```bash
+cd tests; pytest
+```
+
+## Simple Example
 Given some inputs `x` and some data `y`, you can construct a Bayes-Newton model as follows,
 ```python
 kern = bayesnewton.kernels.Matern52()

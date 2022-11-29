@@ -168,9 +168,13 @@ def test_gradient_step(var_f, len_f, var_y):
     loss_fn = gpflow_model.training_loss_closure(data)
     adam_vars = gpflow_model.trainable_variables
     adam_opt.minimize(loss_fn, adam_vars)
-    gpflow_hypers = np.array([gpflow_model.kernel.lengthscales.numpy()[0],
-                              gpflow_model.kernel.lengthscales.numpy()[1],
-                              gpflow_model.kernel.variance.numpy(),
+    #gpflow_hypers = np.array([gpflow_model.kernel.lengthscales.numpy()[0],
+    #                          gpflow_model.kernel.lengthscales.numpy()[1],
+    #                          gpflow_model.kernel.variance.numpy(),
+    #                          gpflow_model.likelihood.variance.numpy()])
+    gpflow_hypers = np.array([gpflow_model.kernel.parameters[0].numpy(),
+                              gpflow_model.kernel.parameters[2].numpy(),
+                              gpflow_model.kernel.parameters[1].numpy(),
                               gpflow_model.likelihood.variance.numpy()])
     print(gpflow_hypers)
     print(gpflow_grads)
