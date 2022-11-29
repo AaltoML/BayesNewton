@@ -99,7 +99,7 @@ For a full list of the all the models available see the [model class list](https
  - **Spatio-Temporal Variational GP** *(Hamelijnck, Wilkinson, Loppi, Solin, Damoulas: Spatio-Temporal Variational Gaussian Processes, NeurIPS 2021)*
 ### Expectation Propagation GPs
  - **Expectation Propagation GP** *(Minka: A Family of Algorithms for Approximate Bayesian Inference, Ph. D thesis 2000)*
- - **Sparse Expectation Propagation GP (energy not working)** *(Csato, Opper: Sparse on-line Gaussian processes, Neural Computation 2002; Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using Power Expectation Propagation, JMLR 2017)*
+ - **(Stochastic) Sparse Expectation Propagation GP** *(Csato, Opper: Sparse on-line Gaussian processes, Neural Computation 2002; Bui, Yan, Turner: A Unifying Framework for Gaussian Process Pseudo Point Approximations Using Power Expectation Propagation, JMLR 2017)*
  - **Markov Expectation Propagation GP** *(Wilkinson, Chang, Riis Andersen, Solin: State Space Expectation Propagation, ICML 2020)*
  - **Sparse Markov Expectation Propagation GP** *(Wilkinson, Solin, Adam: Sparse Algorithms for Markovian Gaussian Processes, AISTATS 2021)*
 ### Laplace/Newton GPs
