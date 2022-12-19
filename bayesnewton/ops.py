@@ -149,7 +149,7 @@ def sparse_conditional_post_to_data(kernel, post_mean, post_cov, X, Z):
         mean: posterior mean [N, 1]
         covariance: posterior covariance [N, N]
     """
-    X = X.reshape(X.shape[0], -1)
+    X = X.reshape(-1, Z.shape[1])
     Kff = kernel(X, X)
     Kuf = kernel(Z, X)
     Kuu = kernel(Z, Z)
