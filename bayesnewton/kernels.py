@@ -2,7 +2,7 @@ import objax
 from jax import vmap
 import jax.numpy as np
 from jax.scipy.linalg import cho_factor, cho_solve, block_diag, expm
-from jax.ops import index_add, index
+#from jax.ops import index_add, index
 from .utils import scaled_squared_euclid_dist, softplus, softplus_inv, rotation_matrix
 from warnings import warn
 
@@ -1587,11 +1587,13 @@ class Independent(Kernel):
     def K(self, X, X2):
         zeros = np.zeros(self.num_kernels)
         K0 = self.kernel0.K(X, X2)
-        index_vector = index_add(zeros, index[0], 1.)
+        #index_vector = index_add(zeros, index[0], 1.)
+        index_vector = index_vector.at[0].add(1.)
         Kstack = np.kron(K0, np.diag(index_vector))
         for i in range(1, self.num_kernels):
             kerneli = eval("self.kernel" + str(i))
-            index_vector = index_add(zeros, index[i], 1.)
+            #index_vector = index_add(zeros, index[i], 1.)
+            index_vector = index_vector.at[i].add(1.)
             Kstack += np.kron(kerneli.K(X, X2), np.diag(index_vector))
         return Kstack
 

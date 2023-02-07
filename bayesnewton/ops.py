@@ -1,6 +1,6 @@
 import jax.numpy as np
 from jax import vmap
-from jax.ops import index_add, index_update, index
+#from jax.ops import index_add, index_update, index
 from jax.scipy.linalg import cho_factor, cho_solve
 from jax.scipy.linalg import solve as jsc_solve
 from .utils import mvn_logpdf, solve, transpose, inv, inv_vmap
@@ -11,7 +11,8 @@ INV2PI = (2 * math.pi) ** -1
 
 
 def get_diag_and_offdiag_components(num_latents, zeros, i, noise_cov):
-    temp_vec = index_add(zeros, index[i], 1.)
+    #temp_vec = index_add(zeros, index[i], 1.)
+    temp_vec = zeros.at[i].add(1.)
     temp_mat = temp_vec.reshape(num_latents, num_latents)
     return np.kron(np.diag(noise_cov), temp_mat)  # block-diag
 
@@ -238,12 +239,14 @@ def parallel_filtering_operator(elem1, elem2):
 
 
 def make_associative_filtering_elements(As, Qs, H, ys, noise_covs, m0, P0):
-    Qs = index_update(Qs, index[0], P0)  # first element requires different initialisation
+    #Qs = index_update(Qs, index[0], P0)  # first element requires different initialisation
+    Qs = Qs.set(0).set(P0)  # first element requires different initialisation
     AA, b, C, J, eta = parallel_filtering_element(As, Qs, H, noise_covs, ys)
     # modify initial b to account for m0 (not needed if m0=zeros)
     S = H @ Qs[0] @ H.T + noise_covs[0]
     K0 = solve(S, H @ Qs[0]).T
-    b = index_add(b, index[0], m0 - K0 @ H @ m0)
+    #b = index_add(b, index[0], m0 - K0 @ H @ m0)
+    b = b.at[0].add(m0 - K0 @ H @ m0)
     return AA, b, C, J, eta
 
 
@@ -447,7 +450,8 @@ def kalman_filter_pairs(dt, kernel, y, noise_cov, mask=None, parallel=False):
 def _sequential_kf_mf(As, Qs, H, ys, noise_covs, m0, P0, masks, block_index):
 
     def build_block_diag(P_blocks):
-        P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        #P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        P = Pzeros.at[block_index].add(P_blocks.flatten())
         return P
 
     def get_block_mean(m):
@@ -488,7 +492,8 @@ def _sequential_kf_mf(As, Qs, H, ys, noise_covs, m0, P0, masks, block_index):
 def parallel_filtering_element_mf_(A, Q, H, noise_cov, y, block_index):
 
     def build_block_diag(P_blocks):
-        P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        #P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        P = Pzeros.at[block_index].add(P_blocks.flatten())
         return P
 
     def get_block_mean(m):
@@ -544,7 +549,8 @@ def parallel_filtering_operator_mf(elem1, elem2):
 def make_associative_filtering_elements_mf(As, Qs, H, ys, noise_covs, m0, P0, block_index):
 
     def build_block_diag(P_blocks):
-        P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        #P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        P = Pzeros.at[block_index].add(P_blocks.flatten())
         return P
 
     def get_block_mean(m):
@@ -555,14 +561,16 @@ def make_associative_filtering_elements_mf(As, Qs, H, ys, noise_covs, m0, P0, bl
     state_dim = num_latents * sub_state_dim
     Pzeros = np.zeros([state_dim, state_dim])
 
-    Qs = index_update(Qs, index[0], P0)  # first element requires different initialisation
+    #Qs = index_update(Qs, index[0], P0)  # first element requires different initialisation
+    Qs = Qs.at[0].set(P0)  # first element requires different initialisation
     AA, b, C, J, eta = parallel_filtering_element_mf(As, Qs, H, noise_covs, ys, block_index)
     # modify initial b to account for m0 (not needed if m0=zeros)
     m0 = m0.reshape(-1, 1)
     Qs0 = build_block_diag(Qs[0])
     S = H @ Qs0 @ H.T + noise_covs[0]
     K0 = solve(S, H @ Qs0).T
-    b = index_add(b, index[0], get_block_mean(m0 - K0 @ (H @ m0)))
+    #b = index_add(b, index[0], get_block_mean(m0 - K0 @ (H @ m0)))
+    b = b.at[0].add(get_block_mean(m0 - K0 @ (H @ m0)))
     return AA, b, C, J, eta
 
 
@@ -570,7 +578,8 @@ def _parallel_kf_mf(As, Qs, H, ys, noise_covs, m0, P0, masks, block_index):
 
     @vmap
     def build_block_diag(P_blocks):
-        P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        #P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        P = Pzeros.at[0].add(P_blocks.flatten())
         return P
 
     def build_mean(m):
@@ -631,7 +640,8 @@ def kalman_filter_meanfield(dt, kernel, y, noise_cov, mask=None, parallel=False,
 def _sequential_rts_mf(fms, fPs, As, Qs, H, return_full, block_index):
 
     def build_block_diag(P_blocks):
-        P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        #P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        P = Pzeros.at[block_index].add(P_blocks.flatten())
         return P
 
     num_latents = fms.shape[1]
@@ -667,7 +677,8 @@ def _parallel_rts_mf(fms, fPs, As, Qs, H, return_full, block_index):
 
     @vmap
     def build_block_diag(P_blocks):
-        P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        #P = index_add(Pzeros, index[block_index], P_blocks.flatten())
+        P = Pzeros.at[block_index].add(P_blocks.flatten())
         return P
 
     def build_mean(m):
@@ -728,7 +739,8 @@ def _sequential_kf_pairs_mf(As, Qs, ys, noise_covs, m0, P0, block_index):
 
     def build_block_diag(P_blocks):
         P = np.zeros([state_dim, state_dim])
-        P = index_add(P, index[block_index], P_blocks.flatten())
+        #P = index_add(P, index[block_index], P_blocks.flatten())
+        P = P.at[block_index].add(P_blocks.flatten())
         return P
 
     def get_block_mean(m):

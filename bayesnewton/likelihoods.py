@@ -1,7 +1,7 @@
 import objax
 import jax.numpy as np
 from jax import grad, jacrev, vmap
-from jax.ops import index_add, index
+#from jax.ops import index_add, index
 from jax.scipy.special import erf, gammaln, logsumexp
 from jax.scipy.linalg import cholesky, cho_solve, inv
 from jax.nn import softmax
@@ -2321,7 +2321,8 @@ class Softmax(MultiLatentLikelihood, GeneralisedGaussNewtonMixin):
         TODO: fix / figure out
         """
         y_hot = np.zeros([self.num_classes, 1], dtype=float)
-        y_hot = index_add(y_hot, index[y.astype(int)], 1.)
+        #y_hot = index_add(y_hot, index[y.astype(int)], 1.)
+        y_hot = y_hot.at[y.astype(int)].add(1.)
         E, C = self.conditional_moments(f)
         cholC = cholesky(C + 1e-8 * np.eye(C.shape[0]), lower=True)
         V = inv(cholC) @ (y_hot - E)  # cannot use a solve here since cholC is triangular
