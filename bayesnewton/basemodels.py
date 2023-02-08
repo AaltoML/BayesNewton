@@ -4,7 +4,6 @@ from .likelihoods import Gaussian, MultiLatentLikelihood
 from .kernels import Independent, Separable
 from jax import vmap
 from jax.lax import scan
-#from jax.ops import index, index_update
 from jax.scipy.linalg import cholesky, cho_factor, cho_solve
 from jax.lib import xla_bridge
 from .utils import (
@@ -195,9 +194,7 @@ class BaseModel(objax.Module):
 
     def group_natural_params(self, nat1, nat2, batch_ind=None):
         if (batch_ind is not None) and (batch_ind.shape[0] != self.num_data):
-            #nat1 = index_update(self.pseudo_likelihood.nat1, index[batch_ind], nat1)
             nat1 = self.pseudo_likelihood.nat1.at[batch_ind].set(nat1)
-            #nat2 = index_update(self.pseudo_likelihood.nat2, index[batch_ind], nat2)
             nat2 = self.pseudo_likelihood.nat2.at[batch_ind].set(nat2)
         return nat1, nat2
 
@@ -955,7 +952,6 @@ class SparseMarkovGaussianProcess(MarkovGaussianProcess):
         # nat2 = 1e-8 * eyes
 
         # initialise to match MarkovGP / GP on first step (when Z=X):
-        #nat2 = index_update(1e-8 * eyes, index[:-1, self.state_dim, self.state_dim], 1e-2)
         nat2 = (1e-8*eyes).at[:-1, self.state_dim, self.state_dim].set(1e-2)
 
         # initialise to match old implementation:
