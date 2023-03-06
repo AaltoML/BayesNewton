@@ -171,7 +171,7 @@ class PartialGaussNewtonMixin(GaussNewtonMixin):
         log_target = -0.5 * V.T @ V + self.log_normaliser(f)
         jacobian = -J.T @ V + ZJ
         # hessian_approx = -J.T @ J + self.log_normaliser_hessian(f)
-        hessian_approx = -J.T @ J - np.diag((ZJ**2).flattent())
+        hessian_approx = -J.T @ J - np.diag((ZJ**2).flatten())
         # second_order_term = -H.T * V
         return log_target, jacobian, hessian_approx  # , second_order_term
 

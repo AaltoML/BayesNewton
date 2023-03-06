@@ -161,3 +161,5 @@ bayesnewton.egg-info/*
 .idea/
 
 src/data/audio_training_textures_Heavy_rain_on_hard_surface.wav
+
+build/
