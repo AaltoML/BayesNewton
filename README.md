@@ -5,7 +5,7 @@ Bayes-Newton is a library for approximate inference in Gaussian processes (GPs) 
 Bayes-Newton provides a unifying view of approximate Bayesian inference, and allows for the combination of many models (e.g. GPs, sparse GPs, Markov GPs, sparse Markov GPs) with the inference method of your choice (VI, EP, Laplace, Linearisation). For a full list of the methods implemented scroll down to the bottom of this page.
 
 The methodology is outlined in the following article:
-* W.J. Wilkinson, S. Särkkä, and A. Solin (2021): **Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees**. [*arXiv preprint arXiv:2111.01721*](https://arxiv.org/abs/2111.01721).
+* W.J. Wilkinson, S. Särkkä, and A. Solin: [**Bayes-Newton Methods for Approximate Bayesian Inference with PSD Guarantees**. *JMLR volume 24 (2023)*](https://www.jmlr.org/papers/volume24/21-1298/21-1298.pdf).
 
 ## Installation
 
@@ -80,12 +80,16 @@ Full demos are available [here](https://github.com/AaltoML/BayesNewton/tree/main
 ## Citing Bayes-Newton
 
 ```
-@article{wilkinson2021bayesnewton,
-  title = {{B}ayes-{N}ewton Methods for Approximate {B}ayesian Inference with {PSD} Guarantees},
-  author = {Wilkinson, William J. and S\"arkk\"a, Simo and Solin, Arno},
-  journal={arXiv preprint arXiv:2111.01721},
-  year={2021}
+@article{wilkinson2023bayes,
+  title={{B}ayes--{N}ewton Methods for Approximate {B}ayesian Inference with {PSD} Guarantees},
+  author={Wilkinson, William J and S{\"a}rkk{\"a}, Simo and Solin, Arno},
+  journal={Journal of Machine Learning Research},
+  volume={24},
+  number={83},
+  pages={1--50},
+  year={2023}
 }
+
 ```
 
 ## Implemented Models
