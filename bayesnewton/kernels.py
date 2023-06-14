@@ -1586,11 +1586,11 @@ class Independent(Kernel):
     def K(self, X, X2):
         zeros = np.zeros(self.num_kernels)
         K0 = self.kernel0.K(X, X2)
-        index_vector = index_vector.at[0].add(1.)
+        index_vector = zeros.at[0].add(1.)
         Kstack = np.kron(K0, np.diag(index_vector))
         for i in range(1, self.num_kernels):
             kerneli = eval("self.kernel" + str(i))
-            index_vector = index_vector.at[i].add(1.)
+            index_vector = zeros.at[i].add(1.)
             Kstack += np.kron(kerneli.K(X, X2), np.diag(index_vector))
         return Kstack
 
