@@ -778,6 +778,83 @@ class Cosine(Kernel):
         return F
 
 
+class Periodic(Kernel):
+    """
+    Periodic kernel in SDE form.
+    Hyperparameters:
+        variance, σ²
+        lengthscale, l
+        period, p
+    The associated continuous-time state space model matrices are constructed via
+    a sum of cosines.
+    """
+    def __init__(self, variance=1.0, lengthscale=1.0, period=1.0, order=6, fix_variance=False):
+        self.transformed_lengthscale = objax.TrainVar(np.array(softplus_inv(lengthscale)))
+        if fix_variance:
+            self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
+        else:
+            self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
+        self.transformed_period = objax.TrainVar(np.array(softplus_inv(period)))
+        super().__init__()
+        self.name = 'Periodic'
+        self.order = order
+
+    @property
+    def variance(self):
+        return softplus(self.transformed_variance.value)
+
+    @property
+    def lengthscale(self):
+        return softplus(self.transformed_lengthscale.value)
+
+    @property
+    def period(self):
+        return softplus(self.transformed_period.value)
+
+    def kernel_to_state_space(self, R=None):
+        q2 = np.array([1, *[2]*self.order]) * self.variance * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale)
+        # The angular frequency
+        omega = 2 * np.pi / self.period
+        # The model
+        F = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        L = np.eye(2 * (self.order + 1))
+        Qc = np.zeros(2 * (self.order + 1))
+        Pinf = np.kron(np.diag(q2), np.eye(2))
+        H = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        return F, L, Qc, H, Pinf
+
+    def stationary_covariance(self):
+        q2 = np.array([1, *[2]*self.order]) * self.variance * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale)
+        Pinf = np.kron(np.diag(q2), np.eye(2))
+        return Pinf
+
+    def measurement_model(self):
+        H = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
+        return H
+
+    def state_transition(self, dt):
+        """
+        Calculation of the closed form discrete-time state
+        transition matrix A = expm(FΔt) for the Periodic prior
+        :param dt: step size(s), Δt = tₙ - tₙ₋₁ [1]
+        :return: state transition matrix A [2(N+1), 2(N+1)]
+        """
+        A = expm(self.feedback_matrix()*dt)
+        # omega = 2 * np.pi / self.period  # The angular frequency
+        # harmonics = np.arange(self.order + 1) * omega
+        #
+        # A = block_diag(*[rotation_matrix(dt, val) for val in harmonics])
+
+        return A
+
+    def feedback_matrix(self):
+        # The angular frequency
+        omega = 2 * np.pi / self.period
+        # The model
+        F = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
+        return F
+
+
 class QuasiPeriodicMatern12(Kernel):
     """
     TODO: implement a general 'Product' class to reduce code duplication
@@ -798,22 +875,6 @@ class QuasiPeriodicMatern12(Kernel):
         super().__init__()
         self.name = 'Quasi-periodic Matern-1/2'
         self.order = order
-        self.igrid = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[1]
-        factorial_mesh_K = np.array([[1., 1., 1., 1., 1., 1., 1.],
-                                     [1., 1., 1., 1., 1., 1., 1.],
-                                     [2., 2., 2., 2., 2., 2., 2.],
-                                     [6., 6., 6., 6., 6., 6., 6.],
-                                     [24., 24., 24., 24., 24., 24., 24.],
-                                     [120., 120., 120., 120., 120., 120., 120.],
-                                     [720., 720., 720., 720., 720., 720., 720.]])
-        b = np.array([[1., 0., 0., 0., 0., 0., 0.],
-                      [0., 2., 0., 0., 0., 0., 0.],
-                      [2., 0., 2., 0., 0., 0., 0.],
-                      [0., 6., 0., 2., 0., 0., 0.],
-                      [6., 0., 8., 0., 2., 0., 0.],
-                      [0., 20., 0., 10., 0., 2., 0.],
-                      [20., 0., 30., 0., 12., 0., 2.]])
-        self.b_fmK_2igrid = b * (1. / factorial_mesh_K) * (2. ** -self.igrid)
 
     @property
     def variance(self):
@@ -835,10 +896,7 @@ class QuasiPeriodicMatern12(Kernel):
         raise NotImplementedError
 
     def kernel_to_state_space(self, R=None):
-        var_p = 1.
-        ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
-        q2 = np.sum(a, axis=0)
+        q2 = np.array([1, *[2]*self.order]) * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale_periodic)
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
@@ -856,33 +914,32 @@ class QuasiPeriodicMatern12(Kernel):
         L = np.kron(L_m, L_p)
         Qc = np.kron(Qc_m, Pinf_p)
         H = np.kron(H_m, H_p)
-        # Pinf = np.kron(Pinf_m, Pinf_p)
-        Pinf = block_diag(
-            np.kron(Pinf_m, q2[0] * np.eye(2)),
-            np.kron(Pinf_m, q2[1] * np.eye(2)),
-            np.kron(Pinf_m, q2[2] * np.eye(2)),
-            np.kron(Pinf_m, q2[3] * np.eye(2)),
-            np.kron(Pinf_m, q2[4] * np.eye(2)),
-            np.kron(Pinf_m, q2[5] * np.eye(2)),
-            np.kron(Pinf_m, q2[6] * np.eye(2)),
-        )
+        Pinf = np.kron(Pinf_m, Pinf_p)
+        # Pinf = block_diag(
+        #     np.kron(Pinf_m, q2[0] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[1] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[2] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[3] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[4] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[5] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[6] * np.eye(2)),
+        # )
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        var_p = 1.
-        ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
-        q2 = np.sum(a, axis=0)
+        q2 = np.array([1, *[2]*self.order]) * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale_periodic)
         Pinf_m = np.array([[self.variance]])
-        Pinf = block_diag(
-            np.kron(Pinf_m, q2[0] * np.eye(2)),
-            np.kron(Pinf_m, q2[1] * np.eye(2)),
-            np.kron(Pinf_m, q2[2] * np.eye(2)),
-            np.kron(Pinf_m, q2[3] * np.eye(2)),
-            np.kron(Pinf_m, q2[4] * np.eye(2)),
-            np.kron(Pinf_m, q2[5] * np.eye(2)),
-            np.kron(Pinf_m, q2[6] * np.eye(2)),
-        )
+        Pinf_p = np.kron(np.diag(q2), np.eye(2))
+        Pinf = np.kron(Pinf_m, Pinf_p)
+        # Pinf = block_diag(
+        #     np.kron(Pinf_m, q2[0] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[1] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[2] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[3] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[4] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[5] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[6] * np.eye(2)),
+        # )
         return Pinf
 
     def measurement_model(self):
@@ -899,16 +956,17 @@ class QuasiPeriodicMatern12(Kernel):
         :return: state transition matrix A [M+1, D, D]
         """
         # The angular frequency
-        omega = 2 * np.pi / self.period
-        harmonics = np.arange(self.order + 1) * omega
-        R0 = rotation_matrix(dt, harmonics[0])
-        R1 = rotation_matrix(dt, harmonics[1])
-        R2 = rotation_matrix(dt, harmonics[2])
-        R3 = rotation_matrix(dt, harmonics[3])
-        R4 = rotation_matrix(dt, harmonics[4])
-        R5 = rotation_matrix(dt, harmonics[5])
-        R6 = rotation_matrix(dt, harmonics[6])
-        A = np.exp(-dt / self.lengthscale_matern) * block_diag(R0, R1, R2, R3, R4, R5, R6)
+        A = expm(self.feedback_matrix() * dt)
+        # omega = 2 * np.pi / self.period
+        # harmonics = np.arange(self.order + 1) * omega
+        # R0 = rotation_matrix(dt, harmonics[0])
+        # R1 = rotation_matrix(dt, harmonics[1])
+        # R2 = rotation_matrix(dt, harmonics[2])
+        # R3 = rotation_matrix(dt, harmonics[3])
+        # R4 = rotation_matrix(dt, harmonics[4])
+        # R5 = rotation_matrix(dt, harmonics[5])
+        # R6 = rotation_matrix(dt, harmonics[6])
+        # A = np.exp(-dt / self.lengthscale_matern) * block_diag(R0, R1, R2, R3, R4, R5, R6)
         return A
 
     def feedback_matrix(self):
@@ -940,22 +998,6 @@ class QuasiPeriodicMatern32(Kernel):
         super().__init__()
         self.name = 'Quasi-periodic Matern-3/2'
         self.order = order
-        self.igrid = np.meshgrid(np.arange(self.order + 1), np.arange(self.order + 1))[1]
-        factorial_mesh_K = np.array([[1., 1., 1., 1., 1., 1., 1.],
-                                     [1., 1., 1., 1., 1., 1., 1.],
-                                     [2., 2., 2., 2., 2., 2., 2.],
-                                     [6., 6., 6., 6., 6., 6., 6.],
-                                     [24., 24., 24., 24., 24., 24., 24.],
-                                     [120., 120., 120., 120., 120., 120., 120.],
-                                     [720., 720., 720., 720., 720., 720., 720.]])
-        b = np.array([[1., 0., 0., 0., 0., 0., 0.],
-                      [0., 2., 0., 0., 0., 0., 0.],
-                      [2., 0., 2., 0., 0., 0., 0.],
-                      [0., 6., 0., 2., 0., 0., 0.],
-                      [6., 0., 8., 0., 2., 0., 0.],
-                      [0., 20., 0., 10., 0., 2., 0.],
-                      [20., 0., 30., 0., 12., 0., 2.]])
-        self.b_fmK_2igrid = b * (1. / factorial_mesh_K) * (2. ** -self.igrid)
 
     @property
     def variance(self):
@@ -977,10 +1019,7 @@ class QuasiPeriodicMatern32(Kernel):
         raise NotImplementedError
 
     def kernel_to_state_space(self, R=None):
-        var_p = 1.
-        ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
-        q2 = np.sum(a, axis=0)
+        q2 = np.array([1, *[2]*self.order]) * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale_periodic)
         # The angular frequency
         omega = 2 * np.pi / self.period
         # The model
@@ -1003,34 +1042,33 @@ class QuasiPeriodicMatern32(Kernel):
         L = np.kron(L_m, L_p)
         Qc = np.kron(Qc_m, Pinf_p)
         H = np.kron(H_m, H_p)
-        # Pinf = np.kron(Pinf_m, Pinf_p)
-        Pinf = block_diag(
-            np.kron(Pinf_m, q2[0] * np.eye(2)),
-            np.kron(Pinf_m, q2[1] * np.eye(2)),
-            np.kron(Pinf_m, q2[2] * np.eye(2)),
-            np.kron(Pinf_m, q2[3] * np.eye(2)),
-            np.kron(Pinf_m, q2[4] * np.eye(2)),
-            np.kron(Pinf_m, q2[5] * np.eye(2)),
-            np.kron(Pinf_m, q2[6] * np.eye(2)),
-        )
+        Pinf = np.kron(Pinf_m, Pinf_p)
+        # Pinf = block_diag(
+        #     np.kron(Pinf_m, q2[0] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[1] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[2] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[3] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[4] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[5] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[6] * np.eye(2)),
+        # )
         return F, L, Qc, H, Pinf
 
     def stationary_covariance(self):
-        var_p = 1.
-        ell_p = self.lengthscale_periodic
-        a = self.b_fmK_2igrid * ell_p ** (-2. * self.igrid) * np.exp(-1. / ell_p ** 2.) * var_p
-        q2 = np.sum(a, axis=0)
+        q2 = np.array([1, *[2]*self.order]) * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale_periodic)
         Pinf_m = np.array([[self.variance, 0.0],
                            [0.0, 3.0 * self.variance / self.lengthscale_matern ** 2.0]])
-        Pinf = block_diag(
-            np.kron(Pinf_m, q2[0] * np.eye(2)),
-            np.kron(Pinf_m, q2[1] * np.eye(2)),
-            np.kron(Pinf_m, q2[2] * np.eye(2)),
-            np.kron(Pinf_m, q2[3] * np.eye(2)),
-            np.kron(Pinf_m, q2[4] * np.eye(2)),
-            np.kron(Pinf_m, q2[5] * np.eye(2)),
-            np.kron(Pinf_m, q2[6] * np.eye(2)),
-        )
+        Pinf_p = np.kron(np.diag(q2), np.eye(2))
+        Pinf = np.kron(Pinf_m, Pinf_p)
+        # Pinf = block_diag(
+        #     np.kron(Pinf_m, q2[0] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[1] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[2] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[3] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[4] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[5] * np.eye(2)),
+        #     np.kron(Pinf_m, q2[6] * np.eye(2)),
+        # )
         return Pinf
 
     def measurement_model(self):
@@ -1046,28 +1084,9 @@ class QuasiPeriodicMatern32(Kernel):
         :param dt: step size(s), Δt = tₙ - tₙ₋₁ [M+1, 1]
         :return: state transition matrix A [M+1, D, D]
         """
-        lam = np.sqrt(3.0) / self.lengthscale_matern
-        # The angular frequency
-        omega = 2 * np.pi / self.period
-        harmonics = np.arange(self.order + 1) * omega
-        R0 = self.subband_mat32(dt, lam, harmonics[0])
-        R1 = self.subband_mat32(dt, lam, harmonics[1])
-        R2 = self.subband_mat32(dt, lam, harmonics[2])
-        R3 = self.subband_mat32(dt, lam, harmonics[3])
-        R4 = self.subband_mat32(dt, lam, harmonics[4])
-        R5 = self.subband_mat32(dt, lam, harmonics[5])
-        R6 = self.subband_mat32(dt, lam, harmonics[6])
-        A = np.exp(-dt * lam) * block_diag(R0, R1, R2, R3, R4, R5, R6)
-        return A
+        A = expm(self.feedback_matrix()*dt)
 
-    @staticmethod
-    def subband_mat32(dt, lam, omega):
-        R = rotation_matrix(dt, omega)
-        Ri = np.block([
-            [(1. + dt * lam) * R, dt * R],
-            [-dt * lam ** 2 * R,  (1. - dt * lam) * R]
-        ])
-        return Ri
+        return A
 
     def feedback_matrix(self):
         # The angular frequency
@@ -1460,78 +1479,6 @@ class SubbandMatern52(Kernel):
         #      -λ³  0  -3λ²  0   -3λ -ω
         #      0   -λ³  0   -3λ²  ω  -3λ )
         F = np.kron(F_mat, np.eye(2)) + np.kron(np.eye(3), F_cos)
-        return F
-
-
-class Periodic(Kernel):
-    """
-    Periodic kernel in SDE form.
-    Hyperparameters:
-        variance, σ²
-        lengthscale, l
-        period, p
-    The associated continuous-time state space model matrices are constructed via
-    a sum of cosines.
-    """
-    def __init__(self, variance=1.0, lengthscale=1.0, period=1.0, order=6, fix_variance=False):
-        self.transformed_lengthscale = objax.TrainVar(np.array(softplus_inv(lengthscale)))
-        if fix_variance:
-            self.transformed_variance = objax.StateVar(np.array(softplus_inv(variance)))
-        else:
-            self.transformed_variance = objax.TrainVar(np.array(softplus_inv(variance)))
-        self.transformed_period = objax.TrainVar(np.array(softplus_inv(period)))
-        super().__init__()
-        self.name = 'Periodic'
-        self.order = order
-
-    @property
-    def variance(self):
-        return softplus(self.transformed_variance.value)
-
-    @property
-    def lengthscale(self):
-        return softplus(self.transformed_lengthscale.value)
-
-    @property
-    def period(self):
-        return softplus(self.transformed_period.value)
-
-    def kernel_to_state_space(self, R=None):
-        q2 = np.array([1, *[2]*self.order]) * self.variance * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale)
-        # The angular frequency
-        omega = 2 * np.pi / self.period
-        # The model
-        F = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
-        L = np.eye(2 * (self.order + 1))
-        Qc = np.zeros(2 * (self.order + 1))
-        Pinf = np.kron(np.diag(q2), np.eye(2))
-        H = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
-        return F, L, Qc, H, Pinf
-
-    def stationary_covariance(self):
-        q2 = np.array([1, *[2]*self.order]) * self.variance * tfp.math.bessel_ive([*range(self.order+1)], self.lengthscale)
-        Pinf = np.kron(np.diag(q2), np.eye(2))
-        return Pinf
-
-    def measurement_model(self):
-        H = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
-        return H
-
-    def state_transition(self, dt):
-        """
-        Calculation of the closed form discrete-time state
-        transition matrix A = expm(FΔt) for the Periodic prior
-        :param dt: step size(s), Δt = tₙ - tₙ₋₁ [1]
-        :return: state transition matrix A [2(N+1), 2(N+1)]
-        """
-        A = expm(self.feedback_matrix()*dt)
-        return A
-
-    def feedback_matrix(self):
-        # The angular frequency
-        omega = 2 * np.pi / self.period
-        # The model
-        F = np.kron(np.diag(np.arange(self.order + 1)), np.array([[0., -omega], [omega, 0.]]))
         return F
 
 
