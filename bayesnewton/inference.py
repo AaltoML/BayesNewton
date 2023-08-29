@@ -1,6 +1,6 @@
 import objax
 import jax.numpy as np
-from jax import vmap
+from jax import vmap, Array
 from .utils import (
     diag,
     transpose,
@@ -48,9 +48,10 @@ class InferenceMixin(abc.ABC):
     TODO: re-derive and re-implement QuasiNewton methods
     TODO: move as much of the generic functionality as possible from the base model class to this class.
     """
+
     num_data: float
-    Y: np.DeviceArray
-    ind: np.DeviceArray
+    Y: Array
+    ind: Array
     pseudo_likelihood: GaussianDistribution
     posterior_mean: objax.StateVar
     posterior_var: objax.StateVar
@@ -231,8 +232,8 @@ class ExpectationPropagation(InferenceMixin):
     compute_full_pseudo_lik: classmethod
     compute_log_lik: classmethod
     compute_ep_energy_terms: classmethod
-    mask_y: np.DeviceArray
-    mask_pseudo_y: np.DeviceArray
+    mask_y: Array
+    mask_pseudo_y: Array
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, ensure_psd=True, **kwargs):
         """
@@ -332,8 +333,8 @@ class PosteriorLinearisation(InferenceMixin):
     # TODO: remove these when possible
     cavity_distribution: classmethod
     compute_full_pseudo_lik: classmethod
-    mask_y: np.DeviceArray
-    mask_pseudo_y: np.DeviceArray
+    mask_y: Array
+    mask_pseudo_y: Array
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
@@ -432,8 +433,8 @@ class PosteriorLinearisation2ndOrder(PosteriorLinearisation):
     """
     # TODO: remove these when possible
     compute_full_pseudo_lik: classmethod
-    mask_y: np.DeviceArray
-    mask_pseudo_y: np.DeviceArray
+    mask_y: Array
+    mask_pseudo_y: Array
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, ensure_psd=True, **kwargs):
         """
@@ -574,8 +575,8 @@ class PosteriorLinearisation2ndOrderGaussNewton(PosteriorLinearisation):
     """
     # TODO: remove these when possible
     compute_full_pseudo_lik: classmethod
-    mask_y: np.DeviceArray
-    mask_pseudo_y: np.DeviceArray
+    mask_y: Array
+    mask_pseudo_y: Array
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
