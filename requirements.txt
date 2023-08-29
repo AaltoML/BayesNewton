@@ -1,9 +1,7 @@
-jax==0.4.2
-jaxlib==0.4.2
-objax==1.6.0
-numba
+jax==0.4.14
+jaxlib==0.4.14
+objax==1.7.0
+tensorflow_probability==0.20.1
 numpy
 matplotlib
 scipy
-sklearn
-pandas

@@ -4,11 +4,7 @@ from jax import vmap
 from jax.scipy.linalg import cholesky, cho_factor, cho_solve
 from jax.scipy.special import gammaln
 from jax.lax import scan
-# from matplotlib._png import read_png
 import math
-from functools import partial
-import numba as nb
-import numpy as onp
 
 LOG2PI = math.log(2 * math.pi)
 INV2PI = (2 * math.pi) ** -1
@@ -520,7 +516,6 @@ def gaussian_expected_log_lik(Y, q_mu, q_covar, noise, mask=None):
     :return:
         E[log 𝓝(yₙ|fₙ,σ²)] = ∫ log 𝓝(yₙ|fₙ,σ²) 𝓝(fₙ|mₙ,vₙ) dfₙ
     """
-
     if mask is not None:
         # build a mask for computing the log likelihood of a partially observed multivariate Gaussian
         maskv = mask.reshape(-1, 1)
@@ -631,31 +626,6 @@ def rotation_matrix(dt, omega):
         [np.sin(omega * dt),  np.cos(omega * dt)]
     ])
     return R
-
-
-@partial(nb.jit, nopython=True)
-def nb_balance_ss(F: onp.ndarray,
-                  iters: int) -> onp.ndarray:
-    """
-    taken from https://github.com/EEA-sensors/parallel-gps/blob/main/pssgp/kernels/math_utils.py
-    """
-    dim = F.shape[0]
-    dtype = F.dtype
-    d = onp.ones((dim,), dtype=dtype)
-    for k in range(iters):
-        for i in range(dim):
-            tmp = onp.copy(F[:, i])
-            tmp[i] = 0.
-            c = onp.linalg.norm(tmp, 2)
-            tmp2 = onp.copy(F[i, :])
-            tmp2[i] = 0.
-
-            r = onp.linalg.norm(tmp2, 2)
-            f = onp.sqrt(r / c)
-            d[i] *= f
-            F[:, i] *= f
-            F[i, :] /= f
-    return d
 
 
 def balance(F: np.ndarray,
