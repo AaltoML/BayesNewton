@@ -3,6 +3,7 @@ import objax
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import math
 
 
 def nonlinearity(f_):
@@ -19,9 +20,9 @@ x = 100 * np.random.rand(N)
 # x = np.linspace(np.min(x), np.max(x), N)
 # f = lambda x_: 3 * np.sin(np.pi * x_ / 10.0)
 f = wiggly_time_series
-y = nonlinearity(f(x)) + np.math.sqrt(0.1)*np.random.randn(x.shape[0])
+y = nonlinearity(f(x)) + math.sqrt(0.1)*np.random.randn(x.shape[0])
 x_test = np.linspace(np.min(x), np.max(x), num=500)
-y_test = nonlinearity(f(x_test)) + np.math.sqrt(0.05)*np.random.randn(x_test.shape[0])
+y_test = nonlinearity(f(x_test)) + math.sqrt(0.05)*np.random.randn(x_test.shape[0])
 x_plot = np.linspace(np.min(x)-10.0, np.max(x)+10.0, num=500)
 
 M = 20

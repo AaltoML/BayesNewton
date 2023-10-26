@@ -4,6 +4,7 @@ import objax
 import numpy as np
 import time
 import pickle
+import math
 
 print('generating some data ...')
 np.random.seed(99)
@@ -11,7 +12,7 @@ N = 10000  # number of points
 x = np.sort(70 * np.random.rand(N))
 sn = 0.01
 f = lambda x_: 12. * np.sin(4 * np.pi * x_) / (0.25 * np.pi * x_ + 1)
-y_ = f(x) + np.math.sqrt(sn)*np.random.randn(x.shape[0])
+y_ = f(x) + math.sqrt(sn)*np.random.randn(x.shape[0])
 y = np.sign(y_)
 y[y == -1] = 0
 
