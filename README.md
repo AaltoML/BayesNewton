@@ -35,7 +35,7 @@ python -m pip install -e .
 
 Running the tests requires additionally a specific version of GPflow to test against:
 ```bash
-python -m pip install pytest
+python -m pip install pytest; deactivate && source venv/bin/activate
 python -m pip install tensorflow==2.10 tensorflow-probability==0.18.0 gpflow==2.5.2
 ```
 
