@@ -5,5 +5,5 @@ numba
 numpy
 matplotlib
 scipy
-sklearn
+scikit-learn
 pandas
