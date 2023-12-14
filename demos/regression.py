@@ -9,8 +9,8 @@ def wiggly_time_series(x_):
     noise_var = 0.2  # true observation noise
     # return 0.25 * (np.cos(0.04*x_+0.33*np.pi) * np.sin(0.2*x_) +
     return (np.cos(0.04*x_+0.33*np.pi) * np.sin(0.2*x_) +
-            np.math.sqrt(noise_var) * np.random.normal(0, 1, x_.shape) +
-            # np.math.sqrt(noise_var) * np.random.uniform(-4, 4, x_.shape) +
+            np.sqrt(noise_var) * np.random.normal(0, 1, x_.shape) +
+            # np.sqrt(noise_var) * np.random.uniform(-4, 4, x_.shape) +
             0.0 * x_)  # 0.02 * x_)
             # 0.0 * x_) + 2.5  # 0.02 * x_)
 

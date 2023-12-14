@@ -14,11 +14,11 @@ x1 = 40 * np.random.rand(N//2) + 60
 x = np.concatenate([x0, np.array([50]), x1], axis=0)
 # x = np.linspace(np.min(x), np.max(x), N)
 f = lambda x_: 6 * np.sin(np.pi * x_ / 10.0) / (np.pi * x_ / 10.0 + 1)
-y_ = f(x) + np.math.sqrt(0.05)*np.random.randn(x.shape[0])
+y_ = f(x) + np.sqrt(0.05)*np.random.randn(x.shape[0])
 y = np.sign(y_)
 y[y == -1] = 0
 x_test = np.linspace(np.min(x)-5.0, np.max(x)+5.0, num=500)
-y_test = np.sign(f(x_test) + np.math.sqrt(0.05)*np.random.randn(x_test.shape[0]))
+y_test = np.sign(f(x_test) + np.sqrt(0.05)*np.random.randn(x_test.shape[0]))
 y_test[y_test == -1] = 0
 x_plot = np.linspace(np.min(x)-10.0, np.max(x)+10.0, num=500)
 z = np.linspace(min(x), max(x), num=M)
