@@ -803,7 +803,7 @@ class MarkovGaussianProcess(BaseModel):
         H = self.kernel.measurement_model()
         if self.spatio_temporal:
             # TODO: if R is fixed, only compute B, C once
-            B, C = self.kernel.spatial_conditional(X, R)
+            B, C = self.kernel.spatial_conditional(X, R, predict=True)
             W = B @ H
             test_mean = W @ state_mean
             test_var = W @ state_cov @ transpose(W) + C
@@ -1060,7 +1060,7 @@ class SparseMarkovGaussianProcess(MarkovGaussianProcess):
         H = self.kernel.measurement_model()
         if self.spatio_temporal:
             # TODO: if R is fixed, only compute B, C once
-            B, C = self.kernel.spatial_conditional(X, R)
+            B, C = self.kernel.spatial_conditional(X, R, predict=True)
             W = B @ H
             test_mean = W @ state_mean
             test_var = W @ state_cov @ transpose(W) + C
@@ -1216,7 +1216,7 @@ class MarkovMeanFieldGaussianProcess(MarkovGaussianProcess):
         H = self.kernel.measurement_model()
         if self.spatio_temporal:
             # TODO: if R is fixed, only compute B, C once
-            B, C = self.kernel.spatial_conditional(X, R)
+            B, C = self.kernel.spatial_conditional(X, R, predict=True)
             W = B @ H
             test_mean = W @ state_mean
             test_var = W @ state_cov @ transpose(W) + C
