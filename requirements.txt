@@ -7,4 +7,4 @@ matplotlib
 scipy
 scikit-learn
 pandas
-tensorflow_probability
+tensorflow_probability==0.21
