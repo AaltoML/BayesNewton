@@ -61,6 +61,7 @@ class Kernel(objax.Module):
         raise NotImplementedError
 
     def state_transition(self, dt):
+        # TODO(32): fix prediction when using expm to compute the state transition.
         F = self.feedback_matrix()
         A = expm(F * dt)
         return A
@@ -1730,6 +1731,7 @@ class LatentExponentiallyGenerated(Kernel):
         assert N.shape == R.shape
         self.N_ = objax.StateVar(np.array(N))
         self.R_ = objax.StateVar(np.array(R))
+        warn("Prediction is partially broken when using the LatentExponentiallyGenerated kernel. See issue #32.")
 
     @property
     def N(self):
