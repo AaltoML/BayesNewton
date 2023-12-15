@@ -1037,7 +1037,7 @@ class QuasiPeriodicMatern32(Kernel):
         L = np.kron(L_m, L_p)
         # note: Qc is always kron(Qc_m, q2I), not kron(Qc_m, Pinf_per). See eq (32) of Solin & Sarkka 2014.
         Qc = block_diag(*np.kron(Qc_m, q2[:, None, None] * np.eye(2)))
-        H = np.kron(H_m, H_p)
+        H = np.kron(H_p, H_m)
         Pinf = block_diag(*np.kron(Pinf_mat, Pinf_per))
         return F, L, Qc, H, Pinf
 
