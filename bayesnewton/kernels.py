@@ -1052,7 +1052,7 @@ class QuasiPeriodicMatern32(Kernel):
     def measurement_model(self):
         H_p = np.kron(np.ones([1, self.order + 1]), np.array([1., 0.]))
         H_m = np.array([[1.0, 0.0]])
-        H = np.kron(H_m, H_p)
+        H = np.kron(H_p, H_m)
         return H
 
     def state_transition(self, dt):
