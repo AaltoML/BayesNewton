@@ -1369,6 +1369,7 @@ SparseIHGP = SparseInfiniteHorizonGaussianProcess
 class DeepGaussianProcess(SparseGaussianProcess):
     """
     TODO: implement likelihood methods for this class
+    TODO: add parameters for noise in the inner layers
     """
     def __init__(
         self,
@@ -1379,6 +1380,7 @@ class DeepGaussianProcess(SparseGaussianProcess):
         Z,
         opt_z=True,
     ):
+        assert isinstance(kernel, Independent)
         self.num_layers = kernel.num_kernels
         if Z.ndim < 2:
             Z = Z[:, None]
