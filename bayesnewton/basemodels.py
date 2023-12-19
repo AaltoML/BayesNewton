@@ -1494,17 +1494,9 @@ class DeepGaussianProcess(SparseGaussianProcess):
                 mean_f0,
                 self.Z.value[:, 1, None],
             )
-            # var_f0 = blockdiagmatrix_to_blocktensor(cov_f0, Nbatch, self.func_dim)
             var_f0 = blockdiagmatrix_to_blocktensor(cov_f0, Nbatch, 1)
             var_f1 = blockdiagmatrix_to_blocktensor(cov_f1, Nbatch, 1)
         else:  # in the PEP case we have one cavity per data point
-            # mean_f, var_f = vmap(sparse_conditional_post_to_data, [None, 0, 0, 0, None])(
-            #     self.kernel,
-            #     post_mean,
-            #     post_cov,
-            #     self.X[batch_ind],
-            #     self.Z.value,
-            # )
             raise NotImplementedError
         mean_f = np.concatenate([mean_f0, mean_f1], axis=1)
         var_f = vmap(np.diag)(np.concatenate([var_f0, var_f1], axis=1)[..., 0])
