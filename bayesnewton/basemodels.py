@@ -1389,6 +1389,13 @@ class DeepGaussianProcess(SparseGaussianProcess):
         assert Z.shape[1] == self.num_layers
         super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
 
+    def conditional_moments(self, f):
+        """
+        This is the key method that needs to be specialised for deep GPs. The moments depend on
+        both the prior and the likelihood.
+        """
+        raise NotImplementedError
+
     def log_likelihood_gradients(self, *args):
         raise NotImplementedError
 

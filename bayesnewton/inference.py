@@ -479,6 +479,7 @@ class Taylor(Newton):
     does not effect the energy.
     """
     analytical_linearisation: classmethod
+    conditional_moments: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., **kwargs):
         """
@@ -494,7 +495,7 @@ class Taylor(Newton):
 
         obs_cov = np.eye(Y.shape[1])  # observation noise scale is w.l.o.g. 1
         sigma = Jsigma @ obs_cov @ transpose(Jsigma)
-        likelihood_expectation, _ = vmap(self.likelihood.conditional_moments)(mean_f)
+        likelihood_expectation, _ = vmap(self.conditional_moments)(mean_f)
         residual = Y.reshape(likelihood_expectation.shape) - likelihood_expectation  # residual, yₙ-E[yₙ|fₙ]
 
         mask = np.isnan(residual)

@@ -538,6 +538,9 @@ class LikelihoodOpsMixin(abc.ABC):
 
     likelihood: Likelihood
 
+    def conditional_moments(self, *args):
+        return self.likelihood.conditional_moments(*args)
+
     def log_likelihood_gradients(self, *args):
         return self.likelihood.log_likelihood_gradients(*args)
 
