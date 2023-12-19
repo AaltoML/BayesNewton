@@ -526,6 +526,49 @@ class Likelihood(objax.Module):
         return expected_conditional_mean_cubature(self, mean, cov, cubature)
 
 
+class LikelihoodOpsMixin(abc.ABC):
+    """
+    A mixin that simply delegates the likelihood operations to the likelihood model. This mixin only exists to be
+    overridden by the deep GP model: we want the deep GP to share as much code as possible with the standard GP,
+    but the concept of having completely separate "priors" and "likelihoods" break down for deep GPs, where the
+    likelihood depends on the GP mappings in the prior: p(y | f1,f2,...,fL) = p(y | fL(...f2(f1))).
+    For this reason, the likelihood requires access to all the model attributes, which goes against the usual class
+    structure in which the model "owns" the likelihood.
+    """
+
+    likelihood: Likelihood
+
+    def log_likelihood_gradients(self, *args):
+        return self.likelihood.log_likelihood_gradients(*args)
+
+    def variational_expectation(self, *args):
+        return self.likelihood.variational_expectation(*args)
+
+    def variational_gauss_newton(self, *args):
+        return self.likelihood.variational_gauss_newton(*args)
+
+    def moment_match(self, *args):
+        return self.likelihood.moment_match(*args)
+
+    def moment_match_dv(self, *args):
+        return self.likelihood.moment_match_dv(*args)
+
+    def gauss_newton(self, *args):
+        return self.likelihood.gauss_newton(*args)
+
+    def statistical_linear_regression(self, *args):
+        return self.likelihood.statistical_linear_regression(*args)
+
+    def statistical_linear_regression_newton(self, *args):
+        return self.likelihood.statistical_linear_regression_newton(*args)
+
+    def statistical_linear_regression_gauss_newton(self, *args):
+        return self.likelihood.statistical_linear_regression_gauss_newton(*args)
+
+    def statistical_linear_regression_quasi_newton(self, *args):
+        return self.likelihood.statistical_linear_regression_quasi_newton(*args)
+
+
 class MultiLatentLikelihood(Likelihood):
     """
     """

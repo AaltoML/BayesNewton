@@ -235,6 +235,7 @@ class ExpectationPropagation(InferenceMixin):
     compute_ep_energy_terms: classmethod
     mask_y: np.DeviceArray
     mask_pseudo_y: np.DeviceArray
+    moment_match: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, ensure_psd=True, **kwargs):
         """
@@ -253,7 +254,7 @@ class ExpectationPropagation(InferenceMixin):
 
         # calculate log marginal likelihood and the new sites via moment matching:
         # EP expected density is the log expected likelihood: log E_q[p(y|f)]
-        lel, dlel, d2lel = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+        lel, dlel, d2lel = vmap(self.moment_match, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f,
             cav_cov_f,
@@ -303,7 +304,7 @@ class ExpectationPropagation(InferenceMixin):
             cav_mean_f, cav_cov_f = cav_mean_f[batch_ind], cav_cov_f[batch_ind]
 
         # EP expected density is log expected likelihood: log E_q[p(y|f)]
-        lel, _, _ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+        lel, _, _ = vmap(self.moment_match, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f,
             cav_cov_f,
@@ -336,6 +337,8 @@ class PosteriorLinearisation(InferenceMixin):
     compute_full_pseudo_lik: classmethod
     mask_y: np.DeviceArray
     mask_pseudo_y: np.DeviceArray
+    statistical_linear_regression: classmethod
+    moment_match: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
@@ -346,7 +349,7 @@ class PosteriorLinearisation(InferenceMixin):
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # PL expected density is mu=E_q[E(y|f)]
-        mu, omega, d_mu, _ = vmap(self.likelihood.statistical_linear_regression, (0, 0, None))(
+        mu, omega, d_mu, _ = vmap(self.statistical_linear_regression, (0, 0, None))(
             mean_f,
             cov_f,
             cubature
@@ -391,7 +394,7 @@ class PosteriorLinearisation(InferenceMixin):
 
         # calculate log marginal likelihood and the new sites via moment matching:
         # EP expected density is log E_q[p(y|f)]
-        lZ, _, _ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+        lZ, _, _ = vmap(self.moment_match, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f[batch_ind],
             cav_cov_f[batch_ind],
@@ -436,6 +439,7 @@ class PosteriorLinearisation2ndOrder(PosteriorLinearisation):
     compute_full_pseudo_lik: classmethod
     mask_y: np.DeviceArray
     mask_pseudo_y: np.DeviceArray
+    statistical_linear_regression_newton: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, ensure_psd=True, **kwargs):
         """
@@ -445,7 +449,7 @@ class PosteriorLinearisation2ndOrder(PosteriorLinearisation):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        log_target, jacobian, hessian = vmap(self.likelihood.statistical_linear_regression_newton, (0, 0, 0, None))(
+        log_target, jacobian, hessian = vmap(self.statistical_linear_regression_newton, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -474,6 +478,7 @@ class Taylor(Newton):
     difference between the algorithms is the way the Hessian of the likelihood is computed / approximated, which
     does not effect the energy.
     """
+    analytical_linearisation: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., **kwargs):
         """
@@ -485,7 +490,7 @@ class Taylor(Newton):
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # calculate the Jacobian of the observation model w.r.t. function fₙ and noise term rₙ
-        Jf, _, Jsigma, _ = vmap(self.likelihood.analytical_linearisation)(mean_f, np.zeros_like(Y))  # evaluate at mean
+        Jf, _, Jsigma, _ = vmap(self.analytical_linearisation)(mean_f, np.zeros_like(Y))  # evaluate at mean
 
         obs_cov = np.eye(Y.shape[1])  # observation noise scale is w.l.o.g. 1
         sigma = Jsigma @ obs_cov @ transpose(Jsigma)
@@ -519,6 +524,7 @@ class GaussNewton(Newton):
     """
     Gauss-Newton
     """
+    gauss_newton: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
@@ -528,7 +534,7 @@ class GaussNewton(Newton):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        log_target, jacobian, hessian = vmap(self.likelihood.gauss_newton, (0, 0))(
+        log_target, jacobian, hessian = vmap(self.gauss_newton, (0, 0))(
             self.Y[batch_ind],
             mean_f
         )
@@ -579,6 +585,7 @@ class PosteriorLinearisation2ndOrderGaussNewton(PosteriorLinearisation):
     compute_full_pseudo_lik: classmethod
     mask_y: np.DeviceArray
     mask_pseudo_y: np.DeviceArray
+    statistical_linear_regression_gauss_newton: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
@@ -588,7 +595,7 @@ class PosteriorLinearisation2ndOrderGaussNewton(PosteriorLinearisation):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        log_target, jacobian, hessian = vmap(self.likelihood.statistical_linear_regression_gauss_newton, (0, 0, 0, None))(
+        log_target, jacobian, hessian = vmap(self.statistical_linear_regression_gauss_newton, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -617,7 +624,7 @@ class NewtonRiemann(Newton):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, hessian = vmap(self.likelihood.log_likelihood_gradients)(  # parallel
+        log_lik, jacobian, hessian = vmap(self.log_likelihood_gradients)(  # parallel
             self.Y[batch_ind],
             mean_f
         )
@@ -696,7 +703,7 @@ class ExpectationPropagationRiemann(ExpectationPropagation):
 
         # calculate log marginal likelihood and the new sites via moment matching:
         # EP expected density is log E_q[p(y|f)]
-        lZ, dlZ, d2lZ = vmap(self.likelihood.moment_match, (0, 0, 0, None, None))(
+        lZ, dlZ, d2lZ = vmap(self.moment_match, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f,
             cav_cov_f,
@@ -741,7 +748,7 @@ class PosteriorLinearisation2ndOrderRiemann(PosteriorLinearisation2ndOrder):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        log_target, jacobian, hessian = vmap(self.likelihood.statistical_linear_regression_newton, (0, 0, 0, None))(
+        log_target, jacobian, hessian = vmap(self.statistical_linear_regression_newton, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -889,7 +896,7 @@ class QuasiNewton(QuasiNewtonBase, Newton):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, _ = vmap(self.likelihood.log_likelihood_gradients)(  # parallel
+        log_lik, jacobian, _ = vmap(self.log_likelihood_gradients)(  # parallel
             self.Y[batch_ind],
             mean_f
         )
@@ -926,7 +933,7 @@ class VariationalQuasiNewton(QuasiNewtonBase, VariationalInference):
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # VI expected density is E_q[log p(y|f)]
-        expected_density, dE_dm, d2E_dm2 = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+        expected_density, dE_dm, d2E_dm2 = vmap(self.variational_expectation, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -963,6 +970,7 @@ class ExpectationPropagationQuasiNewton(QuasiNewtonBase, ExpectationPropagation)
     """
     TODO: implement grouped update to enable sparse markov inference
     """
+    moment_match_dv: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., damping=1., cubature=None, **kwargs):
         """
@@ -977,7 +985,7 @@ class ExpectationPropagationQuasiNewton(QuasiNewtonBase, ExpectationPropagation)
 
         # calculate log marginal likelihood and the new sites via moment matching:
         # EP expected density is log E_q[p(y|f)]
-        lZ, dlZ_dm, d2lZ_dm, dlZ_dv = vmap(self.likelihood.moment_match_dv, (0, 0, 0, None, None))(
+        lZ, dlZ_dm, d2lZ_dm, dlZ_dv = vmap(self.moment_match_dv, (0, 0, 0, None, None))(
             self.Y[batch_ind],
             cav_mean_f,
             cav_cov_f,
@@ -1030,7 +1038,7 @@ class ExpectationPropagationQuasiNewton(QuasiNewtonBase, ExpectationPropagation)
 #
 #         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 #
-#         mu, omega, dmu_dm, d2mu_dm2 = vmap(self.likelihood.statistical_linear_regression, (0, 0, None))(
+#         mu, omega, dmu_dm, d2mu_dm2 = vmap(self.statistical_linear_regression, (0, 0, None))(
 #             mean_f,
 #             cov_f,
 #             cubature
@@ -1085,6 +1093,7 @@ class ExpectationPropagationQuasiNewton(QuasiNewtonBase, ExpectationPropagation)
 class PosteriorLinearisation2ndOrderQuasiNewton(QuasiNewtonBase, PosteriorLinearisation):
     """
     """
+    statistical_linear_regression_quasi_newton: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., damping=1., cubature=None, **kwargs):
         """
@@ -1095,7 +1104,7 @@ class PosteriorLinearisation2ndOrderQuasiNewton(QuasiNewtonBase, PosteriorLinear
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        log_target, dmu_dm, d2mu_dm2 = vmap(self.likelihood.statistical_linear_regression_quasi_newton, (0, 0, 0, None))(
+        log_target, dmu_dm, d2mu_dm2 = vmap(self.statistical_linear_regression_quasi_newton, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,

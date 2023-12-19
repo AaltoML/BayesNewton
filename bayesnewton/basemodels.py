@@ -1,6 +1,6 @@
 import objax
 import jax.numpy as np
-from .likelihoods import Gaussian, MultiLatentLikelihood
+from .likelihoods import Gaussian, MultiLatentLikelihood, LikelihoodOpsMixin
 from .kernels import Independent, Separable
 from jax import vmap
 from jax.lax import scan
@@ -100,7 +100,7 @@ class GaussianDistribution(objax.Module):
         self.mean_.value, self.covariance_.value = self.reparametrise(nat1, nat2)
 
 
-class BaseModel(objax.Module):
+class BaseModel(objax.Module, LikelihoodOpsMixin):
     """
     The parent model class: initialises all the common model features and implements shared methods
     TODO: move as much of the generic functionality as possible from this class to the inference class.
@@ -260,15 +260,6 @@ class BaseModel(objax.Module):
 
         lZ = self.compute_log_lik(pseudo_y, pseudo_var)
         return (cavity_mean, cavity_cov), lel_pseudo, lZ
-
-    def log_likelihood_gradients(self, *args):
-        return self.likelihood.log_likelihood_gradients(*args)
-
-    def variational_expectation(self, *args):
-        return self.likelihood.variational_expectation(*args)
-
-    def variational_gauss_newton(self, *args):
-        return self.likelihood.variational_gauss_newton(*args)
 
 
 class GaussianProcess(BaseModel):
@@ -1405,6 +1396,27 @@ class DeepGaussianProcess(SparseGaussianProcess):
         raise NotImplementedError
 
     def variational_gauss_newton(self, *args):
+        raise NotImplementedError
+
+    def moment_match(self, *args):
+        raise NotImplementedError
+
+    def moment_match_dv(self, *args):
+        raise NotImplementedError
+
+    def gauss_newton(self, *args):
+        raise NotImplementedError
+
+    def statistical_linear_regression(self, *args):
+        raise NotImplementedError
+
+    def statistical_linear_regression_newton(self, *args):
+        raise NotImplementedError
+
+    def statistical_linear_regression_gauss_newton(self, *args):
+        raise NotImplementedError
+
+    def statistical_linear_regression_quasi_newton(self, *args):
         raise NotImplementedError
 
 
