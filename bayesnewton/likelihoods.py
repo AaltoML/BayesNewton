@@ -541,8 +541,9 @@ class LikelihoodOpsMixin(abc.ABC):
     def conditional_moments(self, *args):
         return self.likelihood.conditional_moments(*args)
 
-    def log_likelihood_gradients(self, *args):
-        return self.likelihood.log_likelihood_gradients(*args)
+    def log_likelihood_gradients(self, y, f):
+        # parallelise across data points
+        return vmap(self.likelihood.log_likelihood_gradients)(y, f)
 
     def variational_expectation(self, *args):
         return self.likelihood.variational_expectation(*args)
@@ -717,8 +718,7 @@ class MultiLatentLikelihood(Likelihood):
         Most likelihoods factorise across data points. For multi-latent models, a custom method must be implemented.
         """
         # compute gradients of the log likelihood
-        log_lik, J, H = self.log_likelihood_gradients_(y, f)
-        return log_lik, J, H
+        return self.log_likelihood_gradients_(y, f)
 
     def predict(self, mean_f, var_f, cubature=None):
         """

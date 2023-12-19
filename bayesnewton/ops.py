@@ -46,7 +46,15 @@ def blockdiagmatrix_to_blocktensor(blockdiagmatrix, N, D):
     Convert [ND, ND] block-diagonal matrix to [N, D, D] tensor
     Code from https://stackoverflow.com/questions/10831417/extracting-diagonal-blocks-from-a-numpy-array
     """
-    return np.array([blockdiagmatrix[i*D:(i+1)*D,i*D:(i+1)*D] for i in range(N)])
+    return np.array([blockdiagmatrix[i*D:(i+1)*D, i*D:(i+1)*D] for i in range(N)])
+
+
+def interleaved_blockdiagmatrix_to_blocktensor(blockdiagmatrix, D):
+    """
+    Convert [ND, ND] block-diagonal matrix to [D, N, N] tensor
+    Code from https://stackoverflow.com/questions/10831417/extracting-diagonal-blocks-from-a-numpy-array
+    """
+    return np.array([blockdiagmatrix[i::D, i::D] for i in range(D)])
 
 
 def gaussian_conditional(kernel, y, noise_cov, X, X_star=None):

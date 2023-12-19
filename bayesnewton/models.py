@@ -496,6 +496,14 @@ class SparseVariationalGaussNewtonGP(VariationalGaussNewton, SparseGaussianProce
         super().__init__(kernel, likelihood, X, Y, Z, opt_z)
 
 
+class NewtonDeepGP(Newton, DeepGaussianProcess):
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=True):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z)
+
+
+LaplaceDeepGP = NewtonDeepGP
+
+
 class VariationalDeepGP(VariationalInference, DeepGaussianProcess):
     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=True):
         super().__init__(kernel, likelihood, X, Y, Z, opt_z)

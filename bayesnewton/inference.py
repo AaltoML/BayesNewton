@@ -111,10 +111,7 @@ class Newton(InferenceMixin):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, hessian = vmap(self.log_likelihood_gradients)(  # parallel
-            self.Y[batch_ind],
-            mean_f
-        )
+        log_lik, jacobian, hessian = self.log_likelihood_gradients(self.Y[batch_ind], mean_f)
 
         if ensure_psd:
             hessian = -ensure_diagonal_positive_precision(-hessian)  # manual fix to avoid non-PSD precision
@@ -140,10 +137,7 @@ class Newton(InferenceMixin):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, _, _ = vmap(self.log_likelihood_gradients)(  # parallel
-            self.Y[batch_ind],
-            mean_f
-        )
+        log_lik, _, _ = self.log_likelihood_gradients(self.Y[batch_ind], mean_f)
 
         KL = self.compute_kl()  # KL[q(f)|p(f)]
         laplace_energy = -(  # Laplace approximation to the negative log marginal likelihood
@@ -625,10 +619,7 @@ class NewtonRiemann(Newton):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, hessian = vmap(self.log_likelihood_gradients)(  # parallel
-            self.Y[batch_ind],
-            mean_f
-        )
+        log_lik, jacobian, hessian = self.log_likelihood_gradients(self.Y[batch_ind], mean_f)
 
         jacobian, hessian = self.conditional_data_to_posterior(jacobian[..., None], hessian)
 
@@ -897,10 +888,7 @@ class QuasiNewton(QuasiNewtonBase, Newton):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, _ = vmap(self.log_likelihood_gradients)(  # parallel
-            self.Y[batch_ind],
-            mean_f
-        )
+        log_lik, jacobian, _ = self.log_likelihood_gradients(self.Y[batch_ind], mean_f)
 
         jacobian, _ = self.conditional_data_to_posterior(jacobian[..., None], _)
 
