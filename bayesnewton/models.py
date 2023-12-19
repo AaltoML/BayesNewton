@@ -4,6 +4,7 @@ from jax import vmap
 from .utils import diag, cho_factor, cho_solve, softplus, softplus_inv, transpose
 from .basemodels import (
     GaussianProcess,
+    DeepGaussianProcess,
     SparseGaussianProcess,
     MarkovGaussianProcess,
     SparseMarkovGaussianProcess,
@@ -492,6 +493,21 @@ class MarkovVariationalGaussNewtonGP(VariationalGaussNewton, MarkovGaussianProce
 
 class SparseVariationalGaussNewtonGP(VariationalGaussNewton, SparseGaussianProcess):
     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z)
+
+
+class VariationalDeepGP(VariationalInference, DeepGaussianProcess):
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=True):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z)
+
+
+class VariationalGaussNewtonDeepGP(VariationalGaussNewton, DeepGaussianProcess):
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=True):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z)
+
+
+class VariationalRiemannDeepGP(VariationalInferenceRiemann, DeepGaussianProcess):
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=True):
         super().__init__(kernel, likelihood, X, Y, Z, opt_z)
 
 

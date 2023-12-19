@@ -100,6 +100,7 @@ class Newton(InferenceMixin):
     Newton = Laplace
     """
     compute_kl: classmethod
+    log_likelihood_gradients: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., ensure_psd=True, **kwargs):
         """
@@ -110,7 +111,7 @@ class Newton(InferenceMixin):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, jacobian, hessian = vmap(self.likelihood.log_likelihood_gradients)(  # parallel
+        log_lik, jacobian, hessian = vmap(self.log_likelihood_gradients)(  # parallel
             self.Y[batch_ind],
             mean_f
         )
@@ -139,7 +140,7 @@ class Newton(InferenceMixin):
         mean_f, _ = self.conditional_posterior_to_data(batch_ind)
 
         # Laplace approximates the expected density with a point estimate at the posterior mean: log p(y|f=m)
-        log_lik, _, _ = vmap(self.likelihood.log_likelihood_gradients)(  # parallel
+        log_lik, _, _ = vmap(self.log_likelihood_gradients)(  # parallel
             self.Y[batch_ind],
             mean_f
         )
@@ -165,6 +166,7 @@ class VariationalInference(InferenceMixin):
         Chang, Wilkinson, Khan & Solin 2020 "Fast variational learning in state space Gaussian process models"
     """
     compute_kl: classmethod
+    variational_expectation: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, ensure_psd=True, **kwargs):
         """
@@ -175,7 +177,7 @@ class VariationalInference(InferenceMixin):
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # VI expected density is expected log-likelihood: E_q[log p(y|f)]
-        ell, dell_dm, d2ell_dm2 = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+        ell, dell_dm, d2ell_dm2 = vmap(self.variational_expectation, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -205,7 +207,7 @@ class VariationalInference(InferenceMixin):
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # VI expected density is expected log-likelihood: E_q[log p(y|f)]
-        ell, _, _ = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+        ell, _, _ = vmap(self.variational_expectation, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -544,6 +546,7 @@ class VariationalGaussNewton(VariationalInference):
     """
     Variational Gauss-Newton
     """
+    variational_gauss_newton: classmethod
 
     def update_variational_params(self, batch_ind=None, lr=1., cubature=None, **kwargs):
         """
@@ -553,7 +556,7 @@ class VariationalGaussNewton(VariationalInference):
 
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
-        log_target, jacobian, hessian = vmap(self.likelihood.variational_gauss_newton, (0, 0, 0, None))(
+        log_target, jacobian, hessian = vmap(self.variational_gauss_newton, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,
@@ -655,7 +658,7 @@ class VariationalInferenceRiemann(VariationalInference):
         mean_f, cov_f = self.conditional_posterior_to_data(batch_ind)
 
         # VI expected density is E_q[log p(y|f)]
-        expected_density, dE_dm, d2E_dm2 = vmap(self.likelihood.variational_expectation, (0, 0, 0, None))(
+        expected_density, dE_dm, d2E_dm2 = vmap(self.variational_expectation, (0, 0, 0, None))(
             self.Y[batch_ind],
             mean_f,
             cov_f,

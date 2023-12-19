@@ -261,6 +261,15 @@ class BaseModel(objax.Module):
         lZ = self.compute_log_lik(pseudo_y, pseudo_var)
         return (cavity_mean, cavity_cov), lel_pseudo, lZ
 
+    def log_likelihood_gradients(self, *args):
+        return self.likelihood.log_likelihood_gradients(*args)
+
+    def variational_expectation(self, *args):
+        return self.likelihood.variational_expectation(*args)
+
+    def variational_gauss_newton(self, *args):
+        return self.likelihood.variational_gauss_newton(*args)
+
 
 class GaussianProcess(BaseModel):
     """
@@ -1364,3 +1373,39 @@ class SparseInfiniteHorizonGaussianProcess(SparseMarkovGaussianProcess):
 
 
 SparseIHGP = SparseInfiniteHorizonGaussianProcess
+
+
+class DeepGaussianProcess(SparseGaussianProcess):
+    """
+    TODO: implement likelihood methods for this class
+    """
+    def __init__(
+        self,
+        kernel: Independent,
+        likelihood,
+        X,
+        Y,
+        Z,
+        opt_z=True,
+    ):
+        self.num_layers = kernel.num_kernels
+        if Z.ndim < 2:
+            Z = Z[:, None]
+        if Z.shape[1] == 1:
+            # initialise the inducing inputs for the inner layers if not provided
+            Z_inner = np.linspace(-1.0, 1.0, Z.shape[0])[:, None]
+            Z = np.concatenate([Z] + [Z_inner for _ in range(self.num_layers - 1)], axis=1)
+        assert Z.shape[1] == self.num_layers
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z=opt_z)
+
+    def log_likelihood_gradients(self, *args):
+        raise NotImplementedError
+
+    def variational_expectation(self, *args):
+        raise NotImplementedError
+
+    def variational_gauss_newton(self, *args):
+        raise NotImplementedError
+
+
+DeepGP = DeepGaussianProcess

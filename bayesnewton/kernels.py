@@ -382,6 +382,27 @@ class Matern72(StationaryKernel):
         return F
 
 
+class SquaredExponential(StationaryKernel):
+    """
+    The radial basis function (RBF) or squared exponential kernel. The kernel equation is
+        k(r) = σ² exp{-½ r²}
+    where:
+    r   is the Euclidean distance between the input points, scaled by the lengthscales parameter ℓ.
+    σ²  is the variance parameter
+    Functions drawn from a GP with this kernel are infinitely differentiable.
+    """
+
+    def K_r(self, r):
+        return self.variance * np.exp(-0.5 * np.square(r))
+
+
+RadialBasisFunction = SquaredExponential
+
+ExponentiatedQuadratic = SquaredExponential
+
+Gaussian = SquaredExponential
+
+
 class SpatioTemporalKernel(Kernel):
     """
     The Spatio-Temporal GP class
@@ -1510,14 +1531,20 @@ class Independent(Kernel):
         self.name = 'Independent'
 
     def K(self, X, X2):
+        if X.shape[1] == 1:
+            X = np.tile(X, (1, self.num_kernels))
+        if X2.shape[1] == 1:
+            X2 = np.tile(X2, (1, self.num_kernels))
+        assert X.shape[1] == self.num_kernels
+        assert X2.shape[1] == self.num_kernels
         zeros = np.zeros(self.num_kernels)
-        K0 = self.kernel0.K(X, X2)
+        K0 = self.kernel0.K(X[:, 0, None], X2[:, 0, None])
         index_vector = zeros.at[0].add(1.)
         Kstack = np.kron(K0, np.diag(index_vector))
         for i in range(1, self.num_kernels):
             kerneli = eval("self.kernel" + str(i))
             index_vector = zeros.at[i].add(1.)
-            Kstack += np.kron(kerneli.K(X, X2), np.diag(index_vector))
+            Kstack += np.kron(kerneli.K(X[:, i, None], X2[:, i, None]), np.diag(index_vector))
         return Kstack
 
     def kernel_to_state_space(self, R=None):
