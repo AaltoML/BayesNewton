@@ -15,7 +15,7 @@ X_scaler = StandardScaler().fit(X)
 y_scaler = StandardScaler().fit(Y)
 Xall = X_scaler.transform(X)
 Yall = y_scaler.transform(Y)
-x_plot = np.linspace(np.min(Xall)-0.2, np.max(Xall)+0.2, 200)
+x_plot = np.linspace(np.min(Xall)-0.2, np.max(Xall)+0.2, 200)[:, None]
 
 # Load cross-validation indices
 cvind = np.loadtxt('../experiments/motorcycle/cvind.csv').astype(int)
@@ -123,9 +123,9 @@ x_pred = X_scaler.inverse_transform(x_plot)
 link = model.likelihood.link_fn
 lb = posterior_mean[:, 0] - np.sqrt(posterior_var[:, 0, 0] + link(posterior_mean[:, 1]) ** 2) * 1.96
 ub = posterior_mean[:, 0] + np.sqrt(posterior_var[:, 0, 0] + link(posterior_mean[:, 1]) ** 2) * 1.96
-post_mean = y_scaler.inverse_transform(posterior_mean[:, 0])
-lb = y_scaler.inverse_transform(lb)
-ub = y_scaler.inverse_transform(ub)
+post_mean = y_scaler.inverse_transform(posterior_mean[:, 0:1])
+lb = y_scaler.inverse_transform(lb[:, None])[:, 0]
+ub = y_scaler.inverse_transform(ub[:, None])[:, 0]
 
 print('plotting ...')
 plt.figure(1, figsize=(12, 5))
@@ -133,7 +133,7 @@ plt.clf()
 plt.plot(X_scaler.inverse_transform(X), y_scaler.inverse_transform(Y), 'k.', label='train')
 plt.plot(X_scaler.inverse_transform(XT), y_scaler.inverse_transform(YT), 'r.', label='test')
 plt.plot(x_pred, post_mean, 'c', label='posterior mean')
-plt.fill_between(x_pred, lb, ub, color='c', alpha=0.05, label='95% confidence')
+plt.fill_between(x_pred[:, 0], lb, ub, color='c', alpha=0.05, label='95% confidence')
 plt.xlim(x_pred[0], x_pred[-1])
 if hasattr(model, 'Z'):
     plt.plot(X_scaler.inverse_transform(model.Z.value[:, 0]),

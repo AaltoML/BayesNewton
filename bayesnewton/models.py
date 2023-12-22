@@ -58,6 +58,23 @@ class VariationalGP(VariationalInference, GaussianProcess):
         super().__init__(kernel, likelihood, X, Y)
 
 
+class VariationalRiemannGP(VariationalInferenceRiemann, GaussianProcess):
+    """
+    Variational Gaussian process [1], adapted to use conjugate computation VI [2] with PSD guarantees [3].
+    :param kernel: a kernel object
+    :param likelihood: a likelihood object
+    :param X: inputs
+    :param Y: observations
+
+    [1] Opper, Archambeau: The Variational Gaussian Approximation Revisited, Neural Computation, 2009
+    [2] Khan, Lin: Conugate-Computation Variational Inference - Converting Inference in Non-Conjugate Models in to
+                   Inference in Conjugate Models, AISTATS 2017
+    [3] Lin, Schmidt & Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020
+    """
+    def __init__(self, kernel, likelihood, X, Y):
+        super().__init__(kernel, likelihood, X, Y)
+
+
 class SparseVariationalGP(VariationalInference, SparseGaussianProcess):
     """
     Sparse variational Gaussian process (SVGP) [1], adapted to use conjugate computation VI [2]
@@ -71,6 +88,25 @@ class SparseVariationalGP(VariationalInference, SparseGaussianProcess):
     [1] Hensman, Matthews, Ghahramani: Scalable Variational Gaussian Process Classification, AISTATS 2015
     [2] Khan, Lin: Conugate-Computation Variational Inference - Converting Inference in Non-Conjugate Models in to
                    Inference in Conjugate Models, AISTATS 2017
+    """
+    def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
+        super().__init__(kernel, likelihood, X, Y, Z, opt_z)
+
+
+class SparseVariationalRiemannGP(VariationalInferenceRiemann, SparseGaussianProcess):
+    """
+    Sparse variational Gaussian process (SVGP) [1], adapted to use conjugate computation VI [2] with PSD guarantees [3].
+    :param kernel: a kernel object
+    :param likelihood: a likelihood object
+    :param X: inputs
+    :param Y: observations
+    :param Z: inducing inputs
+    :param opt_z: boolean determining whether to optimise the inducing input locations
+
+    [1] Hensman, Matthews, Ghahramani: Scalable Variational Gaussian Process Classification, AISTATS 2015
+    [2] Khan, Lin: Conugate-Computation Variational Inference - Converting Inference in Non-Conjugate Models in to
+                   Inference in Conjugate Models, AISTATS 2017
+    [3] Lin, Schmidt & Khan: Handling the Positive-Definite Constraint in the Bayesian Learning Rule, ICML 2020
     """
     def __init__(self, kernel, likelihood, X, Y, Z, opt_z=False):
         super().__init__(kernel, likelihood, X, Y, Z, opt_z)

@@ -12,7 +12,7 @@ import gpflow
 def wiggly_time_series(x_):
     noise_var = 0.15  # true observation noise
     return (np.cos(0.04*x_+0.33*np.pi) * np.sin(0.2*x_) +
-            np.math.sqrt(noise_var) * np.random.normal(0, 1, x_.shape))
+            np.sqrt(noise_var) * np.random.normal(0, 1, x_.shape))
 
 
 def build_data(N):

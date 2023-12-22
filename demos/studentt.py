@@ -9,7 +9,7 @@ import time
 def wiggly_time_series(x_):
     noise_var = 0.2  # true observation noise scale
     return (np.cos(0.04*x_+0.33*np.pi) * np.sin(0.2*x_) +
-            np.math.sqrt(noise_var) * np.random.standard_t(3., x_.shape) +
+            np.sqrt(noise_var) * np.random.standard_t(3., x_.shape) +
             0.0 * x_)
 
 

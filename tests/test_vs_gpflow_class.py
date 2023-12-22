@@ -15,7 +15,7 @@ def build_data(N):
     # np.random.seed(12345)
     x = 100 * np.random.rand(N)
     f = lambda x_: 6 * np.sin(np.pi * x_ / 10.0) / (np.pi * x_ / 10.0 + 1)
-    y_ = f(x) + np.math.sqrt(0.05) * np.random.randn(x.shape[0])
+    y_ = f(x) + np.sqrt(0.05) * np.random.randn(x.shape[0])
     y = np.sign(y_)
     y[y == -1] = 0
     x = x[:, None]
