@@ -4,6 +4,7 @@ from jax import vmap
 from jax.scipy.linalg import cholesky, cho_factor, cho_solve
 from jax.scipy.special import gammaln
 from jax.lax import scan
+# from matplotlib._png import read_png
 import math
 
 LOG2PI = math.log(2 * math.pi)
