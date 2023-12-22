@@ -11,7 +11,7 @@ setup(
         "jax==0.4.14",
         "jaxlib==0.4.14",
         "objax==1.7.0",
-        "tensorflow_probability==0.20.1",
+        "tensorflow_probability==0.21",
         "numpy>=1.22"
     ],
     url='https://github.com/AaltoML/BayesNewton',
